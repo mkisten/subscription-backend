@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/admin/payments")
@@ -20,6 +21,7 @@ public class AdminPaymentController {
 
     private final PaymentService paymentService;
 
+    // Существующий endpoint для ожидающих платежей
     @GetMapping("/pending")
     public ResponseEntity<List<Payment>> getPendingPayments() {
         try {
@@ -31,8 +33,10 @@ public class AdminPaymentController {
         }
     }
 
+    // Обновленный endpoint для всех платежей с фильтрацией
     @GetMapping("/all")
-    public ResponseEntity<Page<Payment>> getAllPayments(
+    public ResponseEntity<?> getAllPayments(
+            @RequestParam(required = false) Payment.PaymentStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
@@ -41,14 +45,38 @@ public class AdminPaymentController {
             Sort.Direction sortDirection = direction.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
             Pageable pageable = PageRequest.of(page, size, Sort.by(sortDirection, sortBy));
 
-            Page<Payment> payments = paymentService.getAllPayments(pageable);
-            return ResponseEntity.ok(payments);
+            Page<Payment> payments = paymentService.getAllPaymentsWithFilter(status, pageable);
+
+            // Возвращаем структурированный ответ с пагинацией
+            Map<String, Object> response = Map.of(
+                    "payments", payments.getContent(),
+                    "currentPage", payments.getNumber(),
+                    "totalItems", payments.getTotalElements(),
+                    "totalPages", payments.getTotalPages(),
+                    "hasNext", payments.hasNext(),
+                    "hasPrevious", payments.hasPrevious()
+            );
+
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.badRequest().build();
         }
     }
 
+    // Новый endpoint для получения всех статусов
+    @GetMapping("/statuses")
+    public ResponseEntity<List<Payment.PaymentStatus>> getPaymentStatuses() {
+        try {
+            List<Payment.PaymentStatus> statuses = paymentService.getAllPaymentStatuses();
+            return ResponseEntity.ok(statuses);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    // Существующие методы остаются без изменений
     @GetMapping("/{paymentId}")
     public ResponseEntity<Payment> getPayment(@PathVariable Long paymentId) {
         try {

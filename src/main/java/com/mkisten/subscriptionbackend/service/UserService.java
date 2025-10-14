@@ -1,5 +1,6 @@
 package com.mkisten.subscriptionbackend.service;
 
+import com.mkisten.subscriptionbackend.controller.AdminController;
 import com.mkisten.subscriptionbackend.controller.AuthController;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
@@ -12,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,6 +39,62 @@ public class UserService {
     public User save(User user) {
         User savedUser = userRepository.save(user);
         log.debug("Saved user: {}", savedUser.getTelegramId());
+        return savedUser;
+    }
+
+    /**
+     * Удаляет пользователя по Telegram ID
+     */
+    @Transactional
+    public void deleteUser(Long telegramId) {
+        User user = findByTelegramId(telegramId);
+        userRepository.delete(user);
+        log.info("User deleted: {}", telegramId);
+    }
+
+    /**
+     * Обновляет профиль пользователя с проверкой уникальности email
+     */
+    @Transactional
+    public User updateUserProfile(Long telegramId, AdminController.UpdateUserRequest request) {
+        User user = findByTelegramId(telegramId);
+
+        // Проверяем уникальность email, если он изменяется
+        if (request.email() != null && !request.email().equals(user.getEmail())) {
+            Optional<User> existingUserWithEmail = userRepository.findByEmail(request.email());
+            if (existingUserWithEmail.isPresent() && !existingUserWithEmail.get().getTelegramId().equals(telegramId)) {
+                throw new RuntimeException("Email уже используется другим пользователем: " + request.email());
+            }
+        }
+
+        // Проверяем уникальность username, если он изменяется
+        if (request.username() != null && !request.username().equals(user.getUsername())) {
+            Optional<User> existingUserWithUsername = userRepository.findByUsername(request.username());
+            if (existingUserWithUsername.isPresent() && !existingUserWithUsername.get().getTelegramId().equals(telegramId)) {
+                throw new RuntimeException("Username уже используется другим пользователем: " + request.username());
+            }
+        }
+
+        if (request.firstName() != null) {
+            user.setFirstName(request.firstName());
+        }
+        if (request.lastName() != null) {
+            user.setLastName(request.lastName());
+        }
+        if (request.username() != null) {
+            user.setUsername(request.username());
+        }
+        if (request.email() != null) {
+            user.setEmail(request.email());
+        }
+        if (request.phone() != null) {
+            user.setPhone(request.phone());
+        }
+
+        user.setUpdatedAt(LocalDateTime.now());
+
+        User savedUser = userRepository.save(user);
+        log.info("User profile updated: {}", telegramId);
         return savedUser;
     }
 
@@ -77,6 +135,41 @@ public class UserService {
                 telegramId, days, plan, newEndDate, isActive);
         return savedUser;
     }
+
+    /**
+     * Проверяет активна ли подписка пользователя
+     */
+    public boolean isSubscriptionActive(User user) {
+        if (user == null) {
+            log.warn("User is null in isSubscriptionActive check");
+            return false;
+        }
+        boolean calculatedActive = subscriptionCalculator.calculateSubscriptionActive(user);
+        log.debug("Subscription status for user {}: calculated={}, endDate={}, today={}",
+                user.getTelegramId(), calculatedActive,
+                user.getSubscriptionEndDate(), LocalDate.now());
+        return calculatedActive;
+    }
+
+    /**
+     * Получает количество оставшихся дней подписки
+     */
+    public int getDaysRemaining(User user) {
+        if (user == null || user.getSubscriptionEndDate() == null) {
+            return 0;
+        }
+
+        LocalDate endDate = user.getSubscriptionEndDate();
+        LocalDate today = LocalDate.now();
+
+        if (today.isAfter(endDate)) {
+            return 0;
+        }
+
+        long daysRemaining = ChronoUnit.DAYS.between(today, endDate);
+        return Math.max(0, (int) daysRemaining);
+    }
+
 
     private LocalDate calculateNewEndDate(User user, int days) {
         LocalDate currentEndDate = user.getSubscriptionEndDate();

@@ -3,6 +3,7 @@ package com.mkisten.subscriptionbackend.controller;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.entity.UserRole;
+import com.mkisten.subscriptionbackend.service.PaymentService;
 import com.mkisten.subscriptionbackend.service.TelegramAuthService;
 import com.mkisten.subscriptionbackend.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,14 +15,17 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
@@ -33,6 +37,7 @@ public class AdminController {
 
     private final UserService userService;
     private final TelegramAuthService telegramAuthService;
+    private final PaymentService paymentService;
 
     // ========== УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ==========
 
@@ -233,8 +238,8 @@ public class AdminController {
     // ========== СТАТИСТИКА ==========
 
     @Operation(
-            summary = "Получить статистику",
-            description = "Возвращает статистику по пользователям и подпискам"
+            summary = "Получить расширенную статистику",
+            description = "Возвращает полную статистику по пользователям, подпискам и платежам"
     )
     @GetMapping("/stats")
     public ResponseEntity<?> getStats() {
@@ -243,16 +248,41 @@ public class AdminController {
             List<User> activeUsers = userService.getActiveSubscriptions();
             List<User> expiredUsers = userService.getExpiredSubscriptions();
 
-            AdminStatsResponse stats = new AdminStatsResponse(
+            // Получаем статистику платежей
+            var paymentStats = paymentService.getPaymentStats();
+
+            // Считаем распределение по планам
+            Map<SubscriptionPlan, Long> planDistribution = allUsers.stream()
+                    .collect(Collectors.groupingBy(User::getSubscriptionPlan, Collectors.counting()));
+
+            // Считаем распределение по ролям
+            Map<UserRole, Long> roleDistribution = allUsers.stream()
+                    .collect(Collectors.groupingBy(User::getRole, Collectors.counting()));
+
+            // Считаем новых пользователей за последние 30 дней
+            long newUsersLast30Days = allUsers.stream()
+                    .filter(user -> user.getCreatedAt().isAfter(LocalDateTime.now().minusDays(30)))
+                    .count();
+
+            ExtendedStatsResponse stats = new ExtendedStatsResponse(
                     allUsers.size(),
                     activeUsers.size(),
                     expiredUsers.size(),
                     allUsers.stream().filter(User::getTrialUsed).count(),
-                    allUsers.stream().filter(user -> !user.getTrialUsed()).count()
+                    allUsers.stream().filter(user -> !user.getTrialUsed()).count(),
+                    paymentStats.getTotalPayments(),
+                    paymentStats.getPendingPayments(),
+                    paymentStats.getVerifiedPayments(),
+                    paymentStats.getRejectedPayments(),
+                    paymentStats.getTotalRevenue(),
+                    newUsersLast30Days,
+                    planDistribution,
+                    roleDistribution
             );
 
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
+            log.error("Error getting stats", e);
             return ResponseEntity.badRequest().body(new ErrorResponse("STATS_FAILED", e.getMessage()));
         }
     }
@@ -265,6 +295,62 @@ public class AdminController {
                 "status", "OK"
         ));
     }
+
+    @Operation(
+            summary = "Удалить пользователя",
+            description = "Полностью удаляет пользователя из системы"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Пользователь успешно удален"),
+            @ApiResponse(responseCode = "400", description = "Ошибка при удалении пользователя")
+    })
+    @DeleteMapping("/users/{telegramId}")
+    public ResponseEntity<?> deleteUser(
+            @Parameter(description = "Telegram ID пользователя", required = true)
+            @PathVariable Long telegramId) {
+        try {
+            // Сначала удаляем связанные платежи пользователя
+            // paymentService.deleteUserPayments(telegramId);
+
+            // Затем удаляем пользователя
+            userService.deleteUser(telegramId);
+
+            return ResponseEntity.ok(new MessageResponse(
+                    "User with Telegram ID " + telegramId + " has been deleted successfully"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse("DELETE_FAILED", e.getMessage()));
+        }
+    }
+
+    @Operation(
+            summary = "Обновить данные пользователя",
+            description = "Обновляет информацию о пользователе"
+    )
+    @PutMapping("/users/{telegramId}")
+    public ResponseEntity<?> updateUser(
+            @Parameter(description = "Telegram ID пользователя", required = true)
+            @PathVariable Long telegramId,
+            @Parameter(description = "Данные для обновления", required = true)
+            @RequestBody UpdateUserRequest request) {
+        try {
+            User user = userService.updateUserProfile(telegramId, request);
+            return ResponseEntity.ok(convertToAdminUserResponse(user));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse("UPDATE_FAILED", e.getMessage()));
+        }
+    }
+
+// ========== DTO ДЛЯ ОБНОВЛЕНИЯ ПОЛЬЗОВАТЕЛЯ ==========
+
+    @Schema(description = "Запрос на обновление пользователя")
+    public record UpdateUserRequest(
+            @Schema(description = "Имя") String firstName,
+            @Schema(description = "Фамилия") String lastName,
+            @Schema(description = "Username") String username,
+            @Schema(description = "Email") String email,
+            @Schema(description = "Телефон") String phone
+    ) {}
 
     // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
@@ -339,5 +425,22 @@ public class AdminController {
             @Schema(description = "Истекших подписок") int expiredSubscriptions,
             @Schema(description = "Использовано trial") long trialUsedCount,
             @Schema(description = "Доступно trial") long trialAvailableCount
+    ) {}
+
+    @Schema(description = "Расширенная статистика администратора")
+    public record ExtendedStatsResponse(
+            @Schema(description = "Всего пользователей") int totalUsers,
+            @Schema(description = "Активных подписок") int activeSubscriptions,
+            @Schema(description = "Истекших подписок") int expiredSubscriptions,
+            @Schema(description = "Использовано trial") long trialUsedCount,
+            @Schema(description = "Доступно trial") long trialAvailableCount,
+            @Schema(description = "Всего платежей") long totalPayments,
+            @Schema(description = "Ожидающих платежей") long pendingPayments,
+            @Schema(description = "Подтвержденных платежей") long verifiedPayments,
+            @Schema(description = "Отклоненных платежей") long rejectedPayments,
+            @Schema(description = "Общий доход") double totalRevenue,
+            @Schema(description = "Новых пользователей за 30 дней") long newUsersLast30Days,
+            @Schema(description = "Распределение по планам") Map<SubscriptionPlan, Long> planDistribution,
+            @Schema(description = "Распределение по ролям") Map<UserRole, Long> roleDistribution
     ) {}
 }

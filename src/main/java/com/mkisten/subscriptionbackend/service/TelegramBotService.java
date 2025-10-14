@@ -51,6 +51,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
     private final JwtUtil jwtUtil;
     private final PaymentRepository paymentRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final BotMessageService botMessageService;
 
     @Getter
     public enum SubscriptionPlanWithPrice {
@@ -928,6 +929,10 @@ public class TelegramBotService extends TelegramLongPollingBot {
         message.setChatId(chatId.toString());
         message.setText(text);
         message.setParseMode("Markdown");
+
+        // Логируем исходящее сообщение
+        botMessageService.logMessage(chatId, "TEXT", text, "OUT");
+
         executeMessage(message);
     }
 

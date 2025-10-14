@@ -1,6 +1,7 @@
 package com.mkisten.subscriptionbackend.controller;
 
 import com.mkisten.subscriptionbackend.dto.*;
+import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.security.JwtUtil;
 import com.mkisten.subscriptionbackend.service.TelegramAuthService;
@@ -20,6 +21,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -145,13 +149,22 @@ public class AuthController {
                     request
             );
 
+            // Возвращаем полную информацию о пользователе включая роль
             ProfileResponse response = new ProfileResponse(
                     user.getTelegramId(),
                     user.getFirstName(),
                     user.getLastName(),
                     user.getUsername(),
                     user.getEmail(),
-                    user.getPhone()
+                    user.getPhone(),
+                    user.getSubscriptionEndDate(),
+                    user.getSubscriptionPlan(),
+                    telegramAuthService.isSubscriptionActive(user),
+                    telegramAuthService.getDaysRemaining(user),
+                    user.getTrialUsed(),
+                    user.getRole().name(), // Добавляем роль
+                    user.getCreatedAt(),
+                    user.getLastLoginAt()
             );
 
             return ResponseEntity.ok(response);
@@ -262,6 +275,14 @@ public class AuthController {
             @Schema(description = "Фамилия") String lastName,
             @Schema(description = "Username") String username,
             @Schema(description = "Email") String email,
-            @Schema(description = "Телефон") String phone
+            @Schema(description = "Телефон") String phone,
+            @Schema(description = "Дата окончания подписки") LocalDate subscriptionEndDate,
+            @Schema(description = "Тип подписки") SubscriptionPlan subscriptionPlan,
+            @Schema(description = "Активна ли подписка") Boolean isActive,
+            @Schema(description = "Осталось дней подписки") Integer daysRemaining,
+            @Schema(description = "Использован ли trial") Boolean trialUsed,
+            @Schema(description = "Роль пользователя") String role,
+            @Schema(description = "Дата создания") LocalDateTime createdAt,
+            @Schema(description = "Дата последнего входа") LocalDateTime lastLoginAt
     ) {}
 }

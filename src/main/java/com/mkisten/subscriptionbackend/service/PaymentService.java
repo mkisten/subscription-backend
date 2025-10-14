@@ -42,6 +42,20 @@ public class PaymentService {
         return paymentRepository.save(payment);
     }
 
+    // Получение всех платежей с фильтрацией по статусу
+    public Page<Payment> getAllPaymentsWithFilter(Payment.PaymentStatus status, Pageable pageable) {
+        if (status != null) {
+            return paymentRepository.findByStatusOrderByCreatedAtDesc(status, pageable);
+        } else {
+            return paymentRepository.findAll(pageable);
+        }
+    }
+
+    // Получение всех статусов платежей
+    public List<Payment.PaymentStatus> getAllPaymentStatuses() {
+        return List.of(Payment.PaymentStatus.values());
+    }
+
     private double calculateAmount(SubscriptionPlan plan, Integer months) {
         switch (plan) {
             case MONTHLY:
