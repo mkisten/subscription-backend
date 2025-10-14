@@ -1,0 +1,13 @@
+.git
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+**/target/
+**/.settings/
+**/.project/
+**/.classpath
+**/.idea/
+**/*.iml
+**/node_modules/
+*.log
