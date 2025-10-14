@@ -59,6 +59,7 @@ public class AuthController {
                     user.getLastName(),
                     user.getUsername(),
                     user.getEmail(),
+                    user.getPhone(),
                     user.getSubscriptionEndDate(),
                     telegramAuthService.isSubscriptionActive(user),
                     user.getSubscriptionPlan(),

@@ -14,6 +14,7 @@ public class AuthResponse {
     private String lastName;
     private String username;
     private String email;
+    private String phone;
     private LocalDate subscriptionEndDate;
     private Boolean isActive;
     private SubscriptionPlan subscriptionPlan;
