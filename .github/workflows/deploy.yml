@@ -2,7 +2,7 @@ name: Deploy Telegram Subscription Bot
 
 on:
   push:
-    branches: [main, master]
+    branches: [master]
 
 jobs:
   deploy:
