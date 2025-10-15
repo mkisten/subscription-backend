@@ -17,9 +17,21 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
+                    script: |
             set -e
             echo "🚀 Starting deployment from GitHub..."
+            
+            # Install/ensure Docker Compose v2 (manual curl method, idempotent)
+            echo "🐳 Ensuring Docker Compose v2 is installed..."
+            if ! docker compose version &> /dev/null; then
+              echo "📥 Creating directory and downloading Docker Compose v2 plugin..."
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins
+              sudo curl -SL https://github.com/docker/compose/releases/download/v2.40.0/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose
+              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+              echo "✅ Docker Compose v2 installed!"
+            else
+              echo "✅ Docker Compose v2 already available."
+            fi
             
             # Cleanup and prepare
             docker system prune -f
@@ -27,16 +39,22 @@ jobs:
             cd /root/subscription-backend
             
             # Use Git instead of file copying
+            echo "🔑 Setting up Git authentication..."
+            export GITHUB_PAT="${{ secrets.GITHUB_PAT }}"
+            
             if [ -d ".git" ]; then
               echo "📥 Pulling latest changes..."
+              git remote set-url origin https://$GITHUB_PAT@github.com/mkisten/subscription-backend.git
               git pull origin main
             else
               echo "📥 Cloning repository..."
-              git clone https://github.com/mkisten/subscription-backend.git /root/subscription-backend-temp
+              git clone https://$GITHUB_PAT@github.com/mkisten/subscription-backend.git /root/subscription-backend-temp
               mv /root/subscription-backend-temp/.git ./
               git reset --hard
               rm -rf /root/subscription-backend-temp
             fi
+            
+            unset GITHUB_PAT
             
             # Create .env
             echo "🔧 Creating .env file..."
@@ -276,9 +294,9 @@ jobs:
 
             # Deploy containers
             echo "🔨 Building and starting containers..."
-            docker-compose down
-            docker-compose build --no-cache
-            docker-compose up -d
+            docker compose down
+            docker compose build --no-cache
+            docker compose up -d
             
             # Health check with retry
             echo "🏥 Performing health check..."
@@ -293,6 +311,6 @@ jobs:
             
             echo "🚀 Telegram Subscription Bot deployed successfully from GitHub!"
             echo "📊 Checking container status:"
-            docker-compose ps
+            docker compose ps
             echo "💾 Disk usage:"
             df -h
