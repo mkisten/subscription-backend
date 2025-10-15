@@ -79,7 +79,7 @@ jobs:
             FRONTEND_URL=http://localhost:3000
             SERVER_PORT=8080
             EOF
-            sed -i 's/^  //g' .env
+            sed -i 's/^  //' .env  # Без g
 
             # Create init.sql for database
             echo "🗄️ Creating init.sql..."
@@ -188,7 +188,7 @@ jobs:
               FOR EACH ROW
               EXECUTE FUNCTION update_updated_at_column();
             EOF
-            sed -i 's/^  //g' init.sql
+            sed -i 's/^  //' init.sql  # Без g
 
             # Create docker-compose.yml
             echo "🐳 Creating docker-compose.yml..."
@@ -253,7 +253,7 @@ jobs:
               subscription_network:
                 driver: bridge
             EOF
-            sed -i 's/^  //g' docker-compose.yml
+            sed -i 's/^  //' docker-compose.yml  # Без g
 
             # Create Dockerfile
             echo "🐋 Creating Dockerfile..."
@@ -290,7 +290,7 @@ jobs:
 
             ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
             EOF
-            sed -i 's/^  //g' Dockerfile
+            sed -i 's/^  //' Dockerfile  # Без g
 
             # Deploy containers
             echo "🔨 Building and starting containers..."
