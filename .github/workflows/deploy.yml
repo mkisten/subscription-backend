@@ -41,234 +41,238 @@ jobs:
             # Create .env
             echo "🔧 Creating .env file..."
             cat > .env << EOF
-# Admin Configuration
-ADMIN_CHAT_ID=6927880904
+              # Admin Configuration
+              ADMIN_CHAT_ID=6927880904
 
-# Database Configuration
-POSTGRES_DB=subscription_db
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+              # Database Configuration
+              POSTGRES_DB=subscription_db
+              POSTGRES_USER=postgres
+              POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
 
-# JWT Configuration
-JWT_SECRET=${{ secrets.JWT_SECRET }}
-JWT_EXPIRATION=86400
+              # JWT Configuration
+              JWT_SECRET=${{ secrets.JWT_SECRET }}
+              JWT_EXPIRATION=86400
 
-# Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-TELEGRAM_BOT_USERNAME=hhsubscription_bot
+              # Telegram Bot Configuration
+              TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+              TELEGRAM_BOT_USERNAME=hhsubscription_bot
 
-# Application Configuration
-FRONTEND_URL=http://localhost:3000
-SERVER_PORT=8080
-EOF
+              # Application Configuration
+              FRONTEND_URL=http://localhost:3000
+              SERVER_PORT=8080
+            EOF
+            sed -i 's/^  //g' .env
 
             # Create init.sql for database
             echo "🗄️ Creating init.sql..."
             cat > init.sql << 'EOF'
--- Инициализация базы данных для Telegram бота подписок
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-SET timezone = 'UTC';
+              -- Инициализация базы данных для Telegram бота подписок
+              CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+              SET timezone = 'UTC';
 
-COMMENT ON DATABASE subscription_db IS 'Database for Telegram subscription bot backend';
+              COMMENT ON DATABASE subscription_db IS 'Database for Telegram subscription bot backend';
 
--- Таблица payment_history (история платежей)
-CREATE TABLE IF NOT EXISTS payment_history (
-  id BIGSERIAL PRIMARY KEY,
-  amount DECIMAL(10,2) NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  currency VARCHAR(3) NOT NULL DEFAULT 'USD',
-  payment_date TIMESTAMP,
-  payment_provider VARCHAR(50),
-  status VARCHAR(20) NOT NULL,
-  subscription_plan VARCHAR(50),
-  transaction_id VARCHAR(100) UNIQUE,
-  user_id BIGINT NOT NULL
-);
+              -- Таблица payment_history (история платежей)
+              CREATE TABLE IF NOT EXISTS payment_history (
+                id BIGSERIAL PRIMARY KEY,
+                amount DECIMAL(10,2) NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+                payment_date TIMESTAMP,
+                payment_provider VARCHAR(50),
+                status VARCHAR(20) NOT NULL,
+                subscription_plan VARCHAR(50),
+                transaction_id VARCHAR(100) UNIQUE,
+                user_id BIGINT NOT NULL
+              );
 
--- Таблица users (пользователи)
-CREATE TABLE IF NOT EXISTS users (
-  id BIGSERIAL PRIMARY KEY,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  email VARCHAR(255),
-  first_name VARCHAR(100),
-  last_login_at TIMESTAMP,
-  last_name VARCHAR(100),
-  phone VARCHAR(20),
-  subscription_end_date TIMESTAMP,
-  subscription_plan VARCHAR(50),
-  telegram_id BIGINT UNIQUE NOT NULL,
-  trial_used BOOLEAN NOT NULL DEFAULT FALSE,
-  username VARCHAR(100),
-  role VARCHAR(20) NOT NULL DEFAULT 'USER',
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  subscription_active BOOLEAN NOT NULL DEFAULT FALSE
-);
+              -- Таблица users (пользователи)
+              CREATE TABLE IF NOT EXISTS users (
+                id BIGSERIAL PRIMARY KEY,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                email VARCHAR(255),
+                first_name VARCHAR(100),
+                last_login_at TIMESTAMP,
+                last_name VARCHAR(100),
+                phone VARCHAR(20),
+                subscription_end_date TIMESTAMP,
+                subscription_plan VARCHAR(50),
+                telegram_id BIGINT UNIQUE NOT NULL,
+                trial_used BOOLEAN NOT NULL DEFAULT FALSE,
+                username VARCHAR(100),
+                role VARCHAR(20) NOT NULL DEFAULT 'USER',
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                subscription_active BOOLEAN NOT NULL DEFAULT FALSE
+              );
 
--- Таблица messages (сообщения)
-CREATE TABLE IF NOT EXISTS messages (
-  id BIGSERIAL PRIMARY KEY,
-  content TEXT NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  direction VARCHAR(10) NOT NULL CHECK (direction IN ('IN', 'OUT')),
-  message_type VARCHAR(20) NOT NULL,
-  telegram_id BIGINT NOT NULL
-);
+              -- Таблица messages (сообщения)
+              CREATE TABLE IF NOT EXISTS messages (
+                id BIGSERIAL PRIMARY KEY,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                direction VARCHAR(10) NOT NULL CHECK (direction IN ('IN', 'OUT')),
+                message_type VARCHAR(20) NOT NULL,
+                telegram_id BIGINT NOT NULL
+              );
 
--- Таблица auth_sessions (сессии авторизации)
-CREATE TABLE IF NOT EXISTS auth_sessions (
-  id BIGSERIAL PRIMARY KEY,
-  session_id VARCHAR(36) UNIQUE NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  device_id VARCHAR(255) NOT NULL,
-  jwt_token TEXT,
-  status VARCHAR(20) NOT NULL,
-  telegram_id BIGINT,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP,
-  expires_at TIMESTAMP
-);
+              -- Таблица auth_sessions (сессии авторизации)
+              CREATE TABLE IF NOT EXISTS auth_sessions (
+                id BIGSERIAL PRIMARY KEY,
+                session_id VARCHAR(36) UNIQUE NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                device_id VARCHAR(255) NOT NULL,
+                jwt_token TEXT,
+                status VARCHAR(20) NOT NULL,
+                telegram_id BIGINT,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                expires_at TIMESTAMP
+              );
 
--- Таблица payments (платежи)
-CREATE TABLE IF NOT EXISTS payments (
-  id BIGSERIAL PRIMARY KEY,
-  admin_notes TEXT,
-  amount DECIMAL(10,2) NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  months INTEGER NOT NULL,
-  phone_number VARCHAR(20),
-  plan VARCHAR(50),
-  status VARCHAR(20) NOT NULL,
-  telegram_id BIGINT NOT NULL,
-  verified_at TIMESTAMP
-);
+              -- Таблица payments (платежи)
+              CREATE TABLE IF NOT EXISTS payments (
+                id BIGSERIAL PRIMARY KEY,
+                admin_notes TEXT,
+                amount DECIMAL(10,2) NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                months INTEGER NOT NULL,
+                phone_number VARCHAR(20),
+                plan VARCHAR(50),
+                status VARCHAR(20) NOT NULL,
+                telegram_id BIGINT NOT NULL,
+                verified_at TIMESTAMP
+              );
 
--- Индексы
-CREATE INDEX IF NOT EXISTS idx_payment_history_user_id ON payment_history(user_id);
-CREATE INDEX IF NOT EXISTS idx_payment_history_status ON payment_history(status);
-CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
-CREATE INDEX IF NOT EXISTS idx_users_subscription_end_date ON users(subscription_end_date);
-CREATE INDEX IF NOT EXISTS idx_auth_sessions_telegram_id ON auth_sessions(telegram_id);
-CREATE INDEX IF NOT EXISTS idx_payments_telegram_id ON payments(telegram_id);
+              -- Индексы
+              CREATE INDEX IF NOT EXISTS idx_payment_history_user_id ON payment_history(user_id);
+              CREATE INDEX IF NOT EXISTS idx_payment_history_status ON payment_history(status);
+              CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
+              CREATE INDEX IF NOT EXISTS idx_users_subscription_end_date ON users(subscription_end_date);
+              CREATE INDEX IF NOT EXISTS idx_auth_sessions_telegram_id ON auth_sessions(telegram_id);
+              CREATE INDEX IF NOT EXISTS idx_payments_telegram_id ON payments(telegram_id);
 
--- Функция для автоматического обновления updated_at
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = CURRENT_TIMESTAMP;
-  RETURN NEW;
-END;
-$$ language 'plpgsql';
+              -- Функция для автоматического обновления updated_at
+              CREATE OR REPLACE FUNCTION update_updated_at_column()
+              RETURNS TRIGGER AS \$\$
+              BEGIN
+                NEW.updated_at = CURRENT_TIMESTAMP;
+                RETURN NEW;
+              END;
+              \$\$ language 'plpgsql';
 
-CREATE TRIGGER update_users_updated_at
-  BEFORE UPDATE ON users
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
+              CREATE TRIGGER update_users_updated_at
+                BEFORE UPDATE ON users
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_auth_sessions_updated_at
-  BEFORE UPDATE ON auth_sessions
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
-EOF
+              CREATE TRIGGER update_auth_sessions_updated_at
+                BEFORE UPDATE ON auth_sessions
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+            EOF
+            sed -i 's/^  //g' init.sql
 
             # Create docker-compose.yml
             echo "🐳 Creating docker-compose.yml..."
             cat > docker-compose.yml << 'EOF'
-version: '3.8'
+              version: '3.8'
 
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: subscription_postgres
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - subscription_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+              services:
+                postgres:
+                  image: postgres:15-alpine
+                  container_name: subscription_postgres
+                  environment:
+                    POSTGRES_DB: ${POSTGRES_DB}
+                    POSTGRES_USER: ${POSTGRES_USER}
+                    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+                  ports:
+                    - "5432:5432"
+                  volumes:
+                    - postgres_data:/var/lib/postgresql/data
+                    - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+                  networks:
+                    - subscription_network
+                  healthcheck:
+                    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+                    interval: 30s
+                    timeout: 10s
+                    retries: 3
 
-  app:
-    build: .
-    container_name: subscription_backend
-    ports:
-      - "8080:8080"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
-      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET}
-      - JWT_EXPIRATION=${JWT_EXPIRATION}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
-      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
-      - SERVER_PORT=8080
-      - SERVER_SSL_ENABLED=false
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - subscription_network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+                app:
+                  build: .
+                  container_name: subscription_backend
+                  ports:
+                    - "8080:8080"
+                  environment:
+                    - SPRING_PROFILES_ACTIVE=docker
+                    - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+                    - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+                    - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+                    - JWT_SECRET=${JWT_SECRET}
+                    - JWT_EXPIRATION=${JWT_EXPIRATION}
+                    - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+                    - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+                    - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+                    - SERVER_PORT=8080
+                    - SERVER_SSL_ENABLED=false
+                  depends_on:
+                    postgres:
+                      condition: service_healthy
+                  networks:
+                    - subscription_network
+                  restart: unless-stopped
+                  healthcheck:
+                    test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+                    interval: 30s
+                    timeout: 10s
+                    retries: 3
+                    start_period: 40s
 
-volumes:
-  postgres_data:
+              volumes:
+                postgres_data:
 
-networks:
-  subscription_network:
-    driver: bridge
-EOF
+              networks:
+                subscription_network:
+                  driver: bridge
+            EOF
+            sed -i 's/^  //g' docker-compose.yml
 
             # Create Dockerfile
             echo "🐋 Creating Dockerfile..."
             cat > Dockerfile << 'EOF'
-FROM eclipse-temurin:17-jdk-alpine as builder
+              FROM eclipse-temurin:17-jdk-alpine as builder
 
-WORKDIR /app
+              WORKDIR /app
 
-COPY mvnw .
-COPY .mvn .mvn
-COPY pom.xml .
+              COPY mvnw .
+              COPY .mvn .mvn
+              COPY pom.xml .
 
-RUN ./mvnw dependency:go-offline -B
+              RUN ./mvnw dependency:go-offline -B
 
-COPY src ./src
+              COPY src ./src
 
-RUN ./mvnw clean package -DskipTests
+              RUN ./mvnw clean package -DskipTests
 
-FROM eclipse-temurin:17-jre-alpine
+              FROM eclipse-temurin:17-jre-alpine
 
-WORKDIR /app
+              WORKDIR /app
 
-RUN addgroup -S spring && adduser -S spring -G spring
-USER spring:spring
+              RUN addgroup -S spring && adduser -S spring -G spring
+              USER spring:spring
 
-COPY --from=builder /app/target/*.jar app.jar
+              COPY --from=builder /app/target/*.jar app.jar
 
-ENV JAVA_OPTS="-Xmx512m -Xms256m -Djava.security.egd=file:/dev/./urandom"
+              ENV JAVA_OPTS="-Xmx512m -Xms256m -Djava.security.egd=file:/dev/./urandom"
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8080/actuator/health || exit 1
+              HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \\
+                CMD curl -f http://localhost:8080/actuator/health || exit 1
 
-EXPOSE 8080
+              EXPOSE 8080
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
-EOF
+              ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+            EOF
+            sed -i 's/^  //g' Dockerfile
 
             # Deploy containers
             echo "🔨 Building and starting containers..."
