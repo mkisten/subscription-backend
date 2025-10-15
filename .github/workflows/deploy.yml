@@ -1,57 +1,288 @@
 name: Deploy Telegram Subscription Bot
+
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
+
 jobs:
-  test:
+  deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Build application
-        run: ./mvnw clean package -DskipTests
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main'
-    steps:
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v0.1.5
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd ~/subscription-backend
-            
-            # Pull latest changes
-            git pull origin main
-            
-            # Create .env file if not exists
-            if [ ! -f .env ]; then
-              echo "Creating .env file from template"
-              cp .env.example .env
-            fi
-            
-            # Update environment variables
-            echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
-            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
-            
-            # Stop and rebuild containers
-            docker-compose down
-            docker-compose build --no-cache
-            docker-compose up -d
-            
-            # Health check
-            sleep 30
-            curl -f http://localhost:8080/actuator/health || exit 1
-            
-            echo "🚀 Telegram Subscription Bot deployed successfully!"
+            set -e
+
+            echo "🚀 Starting deployment from GitHub..."
+
+            # Настройка проекта
+            mkdir -p /root/subscription-backend
+            cd /root/subscription-backend
+            rm -rf ./*
+
+            # Создаём .env (Docker Compose автоматически его подхватит)
+            cat > .env <<EOF
+# Admin Configuration
+  ADMIN_CHAT_ID=6927880904
+  
+  # Database Configuration
+  POSTGRES_DB=subscription_db
+  POSTGRES_USER=postgres
+  POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+  
+  # JWT Configuration
+  JWT_SECRET=${{ secrets.JWT_SECRET }}
+  JWT_EXPIRATION=86400
+  
+  # Telegram Bot Configuration
+  TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_BOT_USERNAME=hhsubscription_bot
+  
+  # Application Configuration
+  FRONTEND_URL=http://localhost:3000
+  SERVER_PORT=8080
+  EOF
+  
+  # Create init.sql for database
+  echo "🗄️ Creating init.sql..."
+  cat > init.sql << 'EOF'
+  -- Инициализация базы данных для Telegram бота подписок
+  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+  SET timezone = 'UTC';
+  
+  COMMENT ON DATABASE subscription_db IS 'Database for Telegram subscription bot backend';
+  
+  -- Таблица payment_history (история платежей)
+  CREATE TABLE IF NOT EXISTS payment_history (
+  id BIGSERIAL PRIMARY KEY,
+  amount DECIMAL(10,2) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+  payment_date TIMESTAMP,
+  payment_provider VARCHAR(50),
+  status VARCHAR(20) NOT NULL,
+  subscription_plan VARCHAR(50),
+  transaction_id VARCHAR(100) UNIQUE,
+  user_id BIGINT NOT NULL
+  );
+  
+  -- Таблица users (пользователи)
+  CREATE TABLE IF NOT EXISTS users (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  email VARCHAR(255),
+  first_name VARCHAR(100),
+  last_login_at TIMESTAMP,
+  last_name VARCHAR(100),
+  phone VARCHAR(20),
+  subscription_end_date TIMESTAMP,
+  subscription_plan VARCHAR(50),
+  telegram_id BIGINT UNIQUE NOT NULL,
+  trial_used BOOLEAN NOT NULL DEFAULT FALSE,
+  username VARCHAR(100),
+  role VARCHAR(20) NOT NULL DEFAULT 'USER',
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  subscription_active BOOLEAN NOT NULL DEFAULT FALSE
+  );
+  
+  -- Таблица messages (сообщения)
+  CREATE TABLE IF NOT EXISTS messages (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  direction VARCHAR(10) NOT NULL CHECK (direction IN ('IN', 'OUT')),
+  message_type VARCHAR(20) NOT NULL,
+  telegram_id BIGINT NOT NULL
+  );
+  
+  -- Таблица auth_sessions (сессии авторизации)
+  CREATE TABLE IF NOT EXISTS auth_sessions (
+  id BIGSERIAL PRIMARY KEY,
+  session_id VARCHAR(36) UNIQUE NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  device_id VARCHAR(255) NOT NULL,
+  jwt_token TEXT,
+  status VARCHAR(20) NOT NULL,
+  telegram_id BIGINT,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP,
+  expires_at TIMESTAMP
+  );
+  
+  -- Таблица payments (платежи)
+  CREATE TABLE IF NOT EXISTS payments (
+  id BIGSERIAL PRIMARY KEY,
+  admin_notes TEXT,
+  amount DECIMAL(10,2) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  months INTEGER NOT NULL,
+  phone_number VARCHAR(20),
+  plan VARCHAR(50),
+  status VARCHAR(20) NOT NULL,
+  telegram_id BIGINT NOT NULL,
+  verified_at TIMESTAMP
+  );
+  
+  -- Индексы
+  CREATE INDEX IF NOT EXISTS idx_payment_history_user_id ON payment_history(user_id);
+  CREATE INDEX IF NOT EXISTS idx_payment_history_status ON payment_history(status);
+  CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
+  CREATE INDEX IF NOT EXISTS idx_users_subscription_end_date ON users(subscription_end_date);
+  CREATE INDEX IF NOT EXISTS idx_auth_sessions_telegram_id ON auth_sessions(telegram_id);
+  CREATE INDEX IF NOT EXISTS idx_payments_telegram_id ON payments(telegram_id);
+  
+  -- Функция для автоматического обновления updated_at
+  CREATE OR REPLACE FUNCTION update_updated_at_column()
+  RETURNS TRIGGER AS $$
+  BEGIN
+  NEW.updated_at = CURRENT_TIMESTAMP;
+  RETURN NEW;
+  END;
+  $$ language 'plpgsql';
+  
+  CREATE TRIGGER update_users_updated_at
+  BEFORE UPDATE ON users
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+  
+  CREATE TRIGGER update_auth_sessions_updated_at
+  BEFORE UPDATE ON auth_sessions
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+  EOF
+  
+  # Create docker-compose.yml
+  echo "🐳 Creating docker-compose.yml..."
+  cat > docker-compose.yml << 'EOF'
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: subscription_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - subscription_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  app:
+    build: .
+    container_name: subscription_backend
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRATION=${JWT_EXPIRATION}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - SERVER_PORT=8080
+      - SERVER_SSL_ENABLED=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - subscription_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+
+networks:
+  subscription_network:
+    driver: bridge
+  EOF
+  
+  # Create Dockerfile
+  echo "🐋 Creating Dockerfile..."
+  cat > Dockerfile << 'EOF'
+  FROM eclipse-temurin:17-jdk-alpine as builder
+  
+  WORKDIR /app
+  
+  COPY mvnw .
+  COPY .mvn .mvn
+  COPY pom.xml .
+  
+  RUN ./mvnw dependency:go-offline -B
+  
+  COPY src ./src
+  
+  RUN ./mvnw clean package -DskipTests
+  
+  FROM eclipse-temurin:17-jre-alpine
+  
+  WORKDIR /app
+  
+  RUN addgroup -S spring && adduser -S spring -G spring
+  USER spring:spring
+  
+  COPY --from=builder /app/target/*.jar app.jar
+  
+  ENV JAVA_OPTS="-Xmx512m -Xms256m -Djava.security.egd=file:/dev/./urandom"
+  
+  HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+  
+  EXPOSE 8080
+  
+  ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+  EOF
+  
+  # Copy project files from GitHub
+  echo "📦 Copying project files from GitHub..."
+  cp -r $GITHUB_WORKSPACE/* ./
+  cp -r $GITHUB_WORKSPACE/.* ./ 2>/dev/null || true
+  
+  # Stop and rebuild containers
+  echo "🔨 Building and starting containers..."
+  docker-compose down
+  docker-compose build --no-cache
+  docker-compose up -d
+  
+  # Health check with retry
+  echo "🏥 Performing health check..."
+  for i in {1..10}; do
+  if curl -f http://localhost:8080/actuator/health; then
+  echo "✅ Health check passed!"
+  break
+  fi
+  echo "⏳ Health check failed, retrying in 10s... (attempt $i/10)"
+  sleep 10
+  done
+  
+  echo "🚀 Telegram Subscription Bot deployed successfully from GitHub!"
+  echo "📊 Checking container status:"
+  docker-compose ps
