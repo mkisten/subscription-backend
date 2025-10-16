@@ -42,7 +42,7 @@ public class JwtUtil {
      */
     public String generateToken(Long telegramId) {
         Date issuedAt = new Date();
-        Date expiration = new Date(System.currentTimeMillis() + this.expiration);
+        Date expiration = new Date(System.currentTimeMillis() + this.expiration*1000);
 
         log.info("Generating JWT token - User: {}, Issued: {}, Expires: {}, Expiration ms: {}",
                 telegramId, issuedAt, expiration, this.expiration);
