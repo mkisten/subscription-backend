@@ -932,9 +932,16 @@ public class TelegramBotService extends TelegramLongPollingBot {
 
         // Логируем исходящее сообщение
         botMessageService.logMessage(chatId, "TEXT", text, "OUT");
-
-        executeMessage(message);
+        try {
+            log.info("Отправка сообщения Telegram: chatId={} text={}", chatId, text);
+            executeMessage(message);
+            log.info("Успешно отправлено");
+        } catch (Exception e) {
+            log.error("Ошибка при отправке сообщения Telegram пользователю " + chatId, e);
+            throw e; // обязательно пробрасываем, чтобы контроллер вернул 500 (или кастомно обработать)
+        }
     }
+
 
     private void editMessageText(Long chatId, Integer messageId, String text) {
         EditMessageText message = new EditMessageText();
@@ -950,6 +957,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
             execute(message);
         } catch (TelegramApiException e) {
             log.error("Error sending message", e);
+            throw new RuntimeException("Telegram API error: " + e.getMessage(), e);
         }
     }
 

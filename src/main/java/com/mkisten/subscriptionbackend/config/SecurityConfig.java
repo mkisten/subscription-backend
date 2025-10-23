@@ -47,13 +47,13 @@ public class SecurityConfig {
 
                         // Публичные эндпоинты
                         .requestMatchers("/api/auth/**", "/api/telegram-auth/**",
-                                "/api/bot/**", "/api/test/**", "/health/**").permitAll()
+                                 "/api/test/**", "/health/**").permitAll()
 
                         // Admin endpoints - только для админов
                         .requestMatchers("/admin/**").hasRole("ADMIN")
 
                         // User endpoints - для аутентифицированных пользователей
-                        .requestMatchers("/api/auth/me", "/api/auth/profile", "/api/subscription/**").authenticated()
+                        .requestMatchers("/api/auth/me", "/api/bot/**","/api/auth/profile", "/api/subscription/**").authenticated()
 
                         // Все остальные - требуют аутентификации
                         .anyRequest().authenticated()
