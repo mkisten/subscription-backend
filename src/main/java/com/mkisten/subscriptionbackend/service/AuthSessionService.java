@@ -28,6 +28,10 @@ public class AuthSessionService {
         return authSessionRepository.save(session);
     }
 
+    public AuthSession createSession(String deviceId) {
+        return createAuthSession(deviceId);
+    }
+
     public AuthSession completeAuthSession(String sessionId, Long telegramId, String jwtToken) {
         AuthSession session = authSessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new RuntimeException("Session not found: " + sessionId));

@@ -1,289 +1,197 @@
 package com.mkisten.subscriptionbackend.controller;
 
-import com.mkisten.subscriptionbackend.dto.*;
+import com.mkisten.subscription.contract.dto.auth.TokenResponseDto;
+import com.mkisten.subscription.contract.dto.auth.TokenValidationResponseDto;
+import com.mkisten.subscription.contract.dto.subscription.SubscriptionStatusDto;
+import com.mkisten.subscription.contract.dto.user.UserProfileDto;
+import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.security.JwtUtil;
-import com.mkisten.subscriptionbackend.service.TelegramAuthService;
+import com.mkisten.subscriptionbackend.service.SubscriptionStatusService;
 import com.mkisten.subscriptionbackend.service.UserService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-
+@Slf4j
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
-@Tag(name = "Authentication", description = "API для аутентификации и управления профилем")
-@SecurityRequirement(name = "JWT")
 public class AuthController {
 
-    private final TelegramAuthService telegramAuthService;
-    private final UserService userService;
     private final JwtUtil jwtUtil;
+    private final UserService userService;
+    private final SubscriptionStatusService subscriptionStatusService;
 
-    @Operation(
-            summary = "Получить текущего пользователя",
-            description = "Возвращает информацию о текущем аутентифицированном пользователе"
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Информация о пользователе получена"),
-            @ApiResponse(responseCode = "401", description = "Пользователь не аутентифицирован")
-    })
-    @GetMapping("/me")
-    public ResponseEntity<?> getCurrentUser(
-            @Parameter(hidden = true) @AuthenticationPrincipal User user) {
-        try {
-            // Обновляем время последнего входа
-            userService.updateLastLogin(user.getTelegramId());
+    /**
+     * Выдать JWT по telegramId.
+     * Используется vacancy‑сервисом.
+     */
+    @GetMapping("/token")
+    public ResponseEntity<TokenResponseDto> getToken(@RequestParam Long telegramId) {
+        User user = userService.findByTelegramId(telegramId);
+        String token = jwtUtil.generateToken(user.getTelegramId());
 
-            AuthResponse response = new AuthResponse(
-                    null,
-                    user.getTelegramId(),
-                    user.getFirstName(),
-                    user.getLastName(),
-                    user.getUsername(),
-                    user.getEmail(),
-                    user.getPhone(),
-                    user.getSubscriptionEndDate(),
-                    telegramAuthService.isSubscriptionActive(user),
-                    user.getSubscriptionPlan(),
-                    user.getTrialUsed(),
-                    telegramAuthService.getDaysRemaining(user),
-                    user.getRole().name()
-            );
+        // Обновляем время последнего входа
+        userService.updateLastLogin(telegramId);
 
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            return ResponseEntity.status(401).body(
-                    new ErrorResponse("USER_NOT_FOUND", e.getMessage())
-            );
-        }
+        return ResponseEntity.ok(new TokenResponseDto(token));
     }
 
-    @Operation(
-            summary = "Проверить статус подписки",
-            description = "Проверяет статус подписки текущего пользователя"
-    )
-    @GetMapping("/check-subscription")
-    public ResponseEntity<?> checkSubscription(
-            @Parameter(hidden = true) @AuthenticationPrincipal User user) {
-        try {
-            SubscriptionStatusResponse response = new SubscriptionStatusResponse(
-                    user.getTelegramId(),
-                    user.getFirstName(),
-                    user.getLastName(),
-                    user.getUsername(),
-                    user.getEmail(),
-                    user.getSubscriptionEndDate(),
-                    user.getSubscriptionPlan(),
-                    telegramAuthService.isSubscriptionActive(user),
-                    telegramAuthService.getDaysRemaining(user),
-                    user.getTrialUsed(),
-                    user.getRole().name()
-            );
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            return ResponseEntity.status(401).body(
-                    new ErrorResponse("SUBSCRIPTION_CHECK_FAILED", e.getMessage())
-            );
-        }
-    }
-
-    @Operation(
-            summary = "Обновить профиль",
-            description = """
-        Обновляет профиль текущего пользователя.
-        
-        **Обновляемые поля:**
-        - firstName (Имя)
-        - lastName (Фамилия) 
-        - username (Username в Telegram)
-        - email (Email)
-        - phone (Телефон)
-        
-        **Примечание:** Все поля опциональны. Можно обновлять как все поля, так и только некоторые.
-        Telegram ID не может быть изменен.
-        """
-    )
-    @ApiResponses({
-            @ApiResponse(
-                    responseCode = "200",
-                    description = "Профиль успешно обновлен",
-                    content = @Content(schema = @Schema(implementation = ProfileResponse.class))
-            ),
-            @ApiResponse(
-                    responseCode = "400",
-                    description = "Ошибка при обновлении профиля",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            )
-    })
-    @PutMapping("/profile")
-    public ResponseEntity<?> updateProfile(
-            @Parameter(hidden = true) @AuthenticationPrincipal User currentUser,
-            @Parameter(
-                    description = "Данные для обновления профиля",
-                    required = true
-            )
-            @RequestBody ProfileUpdateRequest request) {
-        try {
-            User user = userService.updateUserProfile(
-                    currentUser.getTelegramId(),
-                    request
-            );
-
-            // Возвращаем полную информацию о пользователе включая роль
-            ProfileResponse response = new ProfileResponse(
-                    user.getTelegramId(),
-                    user.getFirstName(),
-                    user.getLastName(),
-                    user.getUsername(),
-                    user.getEmail(),
-                    user.getPhone(),
-                    user.getSubscriptionEndDate(),
-                    user.getSubscriptionPlan(),
-                    telegramAuthService.isSubscriptionActive(user),
-                    telegramAuthService.getDaysRemaining(user),
-                    user.getTrialUsed(),
-                    user.getRole().name(), // Добавляем роль
-                    user.getCreatedAt(),
-                    user.getLastLoginAt()
-            );
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse("UPDATE_FAILED", e.getMessage())
-            );
-        }
-    }
-
-    @Operation(
-            summary = "Обновить токен",
-            description = "Генерирует новый JWT токен для текущего пользователя"
-    )
-    @PostMapping("/refresh")
-    public ResponseEntity<?> refreshToken(
-            @Parameter(hidden = true) @AuthenticationPrincipal User user) {
-        try {
-            String newToken = jwtUtil.generateToken(user.getTelegramId());
-            return ResponseEntity.ok(new TokenResponse(newToken));
-        } catch (Exception e) {
-            return ResponseEntity.status(401).body(
-                    new ErrorResponse("TOKEN_REFRESH_FAILED", e.getMessage())
-            );
-        }
-    }
-
-    @Operation(
-            summary = "Получить токен по Telegram ID",
-            description = "Генерирует JWT токен для пользователя по Telegram ID"
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Токен успешно сгенерирован"),
-            @ApiResponse(responseCode = "400", description = "Пользователь не найден")
-    })
+    /**
+     * Выдать JWT по telegramId (POST).
+     * Для совместимости с клиентами, которые отправляют JSON.
+     */
     @PostMapping("/token")
-    public ResponseEntity<?> getToken(
-            @Parameter(description = "Telegram ID пользователя", required = true)
-            @RequestParam Long telegramId) {
-        try {
-            User user = userService.findByTelegramId(telegramId);
-            String token = jwtUtil.generateToken(user.getTelegramId());
-
-            // Обновляем время последнего входа
-            userService.updateLastLogin(telegramId);
-
-            return ResponseEntity.ok(new TokenResponse(token));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(
-                    new ErrorResponse("USER_NOT_FOUND", "User not registered. Please register via Telegram bot first.")
-            );
+    public ResponseEntity<TokenResponseDto> getTokenPost(@RequestBody TokenRequest request) {
+        if (request == null || request.telegramId() == null) {
+            return ResponseEntity.badRequest().build();
         }
+        return getToken(request.telegramId());
     }
 
-    @Operation(
-            summary = "Проверить валидность токена",
-            description = "Проверяет валидность текущего JWT токена"
-    )
+    /**
+     * Валидация токена.
+     * Для фильтра в vacancy‑сервисе.
+     * Если токен невалидный, сюда вообще не дойдет – Spring Security отдаст 401.
+     */
     @GetMapping("/validate")
-    public ResponseEntity<?> validateToken(
-            @Parameter(hidden = true) @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(new MessageResponse("Token is valid"));
+    public ResponseEntity<TokenValidationResponseDto> validateToken(
+            @AuthenticationPrincipal UserDetails principal
+    ) {
+        // если попали сюда – токен прошел все фильтры
+        String username = principal.getUsername();
+        log.debug("Token validated for user: {}", username);
+        return ResponseEntity.ok(new TokenValidationResponseDto(true, "Token is valid"));
     }
 
+    /**
+     * Профиль текущего пользователя (по JWT).
+     * Используется vacancy‑сервисом.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<UserProfileDto> getCurrentUser(
+            @AuthenticationPrincipal UserDetails principal
+    ) {
+        String username = principal.getUsername();
+        User user = userService.findByUsername(username);
 
-    @Schema(description = "Ответ об ошибке")
-    public record ErrorResponse(
-            @Schema(description = "Код ошибки") String code,
-            @Schema(description = "Сообщение об ошибке") String message) {}
+        UserProfileDto dto = mapUserToProfileDto(user);
+        return ResponseEntity.ok(dto);
+    }
 
-    @Schema(description = "Запрос на обновление профиля")
+    /**
+     * Обновить профиль текущего пользователя (по JWT).
+     */
+    @PutMapping("/profile")
+    public ResponseEntity<UserProfileDto> updateCurrentUserProfile(
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestBody ProfileUpdateRequest request
+    ) {
+        String username = principal.getUsername();
+        User user = userService.findByUsername(username);
+
+        User updated = userService.updateUserProfile(user.getTelegramId(), request);
+        return ResponseEntity.ok(mapUserToProfileDto(updated));
+    }
+
+    /**
+     * Обновить JWT токен.
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<TokenResponseDto> refreshToken(
+            @RequestHeader("Authorization") String authorization
+    ) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return ResponseEntity.badRequest().build();
+        }
+        String token = authorization.substring(7);
+        String refreshed = jwtUtil.refreshToken(token);
+        return ResponseEntity.ok(new TokenResponseDto(refreshed));
+    }
+
+    // --- private mapping helpers ---
+
+    private UserProfileDto mapUserToProfileDto(User user) {
+        boolean isActive = userService.isSubscriptionActive(user);
+        int daysRemaining = userService.getDaysRemaining(user);
+
+        SubscriptionPlanDto planDto = null;
+        if (user.getSubscriptionPlan() != null) {
+            planDto = SubscriptionPlanDto.valueOf(user.getSubscriptionPlan().name());
+        }
+
+        UserProfileDto dto = new UserProfileDto();
+        dto.setTelegramId(user.getTelegramId());
+        dto.setFirstName(user.getFirstName());
+        dto.setLastName(user.getLastName());
+        dto.setUsername(user.getUsername());
+        dto.setEmail(user.getEmail());
+        dto.setPhone(user.getPhone());
+
+        dto.setSubscriptionEndDate(user.getSubscriptionEndDate());
+        dto.setSubscriptionPlan(planDto);
+        dto.setIsActive(isActive);
+        dto.setDaysRemaining(daysRemaining);
+        dto.setTrialUsed(user.getTrialUsed());
+
+        dto.setRole(user.getRole() != null ? user.getRole().name() : null);
+        dto.setCreatedAt(user.getCreatedAt());
+        dto.setLastLoginAt(user.getLastLoginAt());
+
+        return dto;
+    }
+
+    /**
+     * Если хочешь, можно оставить этот метод или перенести в отдельный контроллер.
+     * Публичный статус подписки текущего пользователя.
+     */
+    @GetMapping("/subscription/status")
+    public ResponseEntity<SubscriptionStatusDto> getSubscriptionStatus(
+            @AuthenticationPrincipal UserDetails principal
+    ) {
+        String username = principal.getUsername();
+        User user = userService.findByUsername(username);
+        SubscriptionStatusDto dto = mapUserToSubscriptionStatusDto(user);
+        return ResponseEntity.ok(dto);
+    }
+
+    private SubscriptionStatusDto mapUserToSubscriptionStatusDto(User user) {
+        boolean isActive = userService.isSubscriptionActive(user);
+        long daysRemaining = userService.getDaysRemaining(user);
+
+        SubscriptionPlanDto planDto = null;
+        if (user.getSubscriptionPlan() != null) {
+            planDto = SubscriptionPlanDto.valueOf(user.getSubscriptionPlan().name());
+        }
+
+        SubscriptionStatusDto dto = new SubscriptionStatusDto();
+        dto.setTelegramId(user.getTelegramId());
+        dto.setFirstName(user.getFirstName());
+        dto.setLastName(user.getLastName());
+        dto.setUsername(user.getUsername());
+        dto.setEmail(user.getEmail());
+        dto.setSubscriptionEndDate(user.getSubscriptionEndDate());
+        dto.setSubscriptionPlan(planDto);
+        dto.setActive(isActive);
+        dto.setDaysRemaining((long) daysRemaining);
+        dto.setTrialUsed(user.getTrialUsed());
+        dto.setRole(user.getRole() != null ? user.getRole().name() : null);
+
+        return dto;
+    }
+
+    public record TokenRequest(Long telegramId) {}
+
     public record ProfileUpdateRequest(
-            @Schema(description = "Имя пользователя", example = "Иван")
-            @Size(max = 100, message = "Имя не должно превышать 100 символов")
             String firstName,
-
-            @Schema(description = "Фамилия пользователя", example = "Иванов")
-            @Size(max = 100, message = "Фамилия не должна превышать 100 символов")
             String lastName,
-
-            @Schema(description = "Username в Telegram", example = "ivanov")
-            @Size(max = 50, message = "Username не должен превышать 50 символов")
             String username,
-
-            @Schema(description = "Email пользователя", example = "user@example.com")
-            @Email(message = "Некорректный формат email")
-            @Size(max = 255, message = "Email не должен превышать 255 символов")
             String email,
-
-            @Schema(description = "Телефон пользователя", example = "+79123456789")
-            @Pattern(regexp = "^\\+?[1-9]\\d{1,14}$", message = "Некорректный формат телефона")
-            @Size(max = 20, message = "Телефон не должен превышать 20 символов")
             String phone
-    ) {}
-
-    @Schema(description = "Ответ с токеном")
-    public record TokenResponse(@Schema(description = "JWT токен") String token) {}
-
-    @Schema(description = "Сообщение ответа")
-    public record MessageResponse(@Schema(description = "Текст сообщения") String message) {}
-
-    // Profile Response DTO
-    @Schema(description = "Ответ с информацией о профиле")
-    public record ProfileResponse(
-            @Schema(description = "Telegram ID") Long telegramId,
-            @Schema(description = "Имя") String firstName,
-            @Schema(description = "Фамилия") String lastName,
-            @Schema(description = "Username") String username,
-            @Schema(description = "Email") String email,
-            @Schema(description = "Телефон") String phone,
-            @Schema(description = "Дата окончания подписки") LocalDate subscriptionEndDate,
-            @Schema(description = "Тип подписки") SubscriptionPlan subscriptionPlan,
-            @Schema(description = "Активна ли подписка") Boolean isActive,
-            @Schema(description = "Осталось дней подписки") Integer daysRemaining,
-            @Schema(description = "Использован ли trial") Boolean trialUsed,
-            @Schema(description = "Роль пользователя") String role,
-            @Schema(description = "Дата создания") LocalDateTime createdAt,
-            @Schema(description = "Дата последнего входа") LocalDateTime lastLoginAt
     ) {}
 }

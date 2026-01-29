@@ -18,9 +18,9 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("status", HttpStatus.NOT_FOUND.value());
-        body.put("error", "Not Found");
-        body.put("message", ex.getMessage());
+        body.put("error", HttpStatus.NOT_FOUND.getReasonPhrase());
         body.put("code", "USER_NOT_FOUND");
+        body.put("message", ex.getMessage());
 
         return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
     }
@@ -30,9 +30,9 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("status", HttpStatus.BAD_REQUEST.value());
-        body.put("error", "Bad Request");
-        body.put("message", ex.getMessage());
+        body.put("error", HttpStatus.BAD_REQUEST.getReasonPhrase());
         body.put("code", "INVALID_TOKEN");
+        body.put("message", ex.getMessage());
 
         return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
@@ -42,9 +42,9 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("status", HttpStatus.FORBIDDEN.value());
-        body.put("error", "Forbidden");
-        body.put("message", ex.getMessage());
+        body.put("error", HttpStatus.FORBIDDEN.getReasonPhrase());
         body.put("code", "SUBSCRIPTION_EXPIRED");
+        body.put("message", ex.getMessage());
 
         return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }

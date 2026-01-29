@@ -226,11 +226,41 @@ public class UserService {
     public User updateUserProfile(Long telegramId, AuthController.ProfileUpdateRequest request) {
         User user = findByTelegramId(telegramId);
 
-        user.setFirstName(request.firstName());
-        user.setLastName(request.lastName());
-        user.setUsername(request.username());
-        user.setEmail(request.email());
-        user.setPhone(request.phone());
+        if (request == null) {
+            return user;
+        }
+
+        if (request.email() != null && !request.email().equals(user.getEmail())) {
+            Optional<User> existingUserWithEmail = userRepository.findByEmail(request.email());
+            if (existingUserWithEmail.isPresent()
+                    && !existingUserWithEmail.get().getTelegramId().equals(telegramId)) {
+                throw new RuntimeException("Email уже используется другим пользователем: " + request.email());
+            }
+        }
+
+        if (request.username() != null && !request.username().equals(user.getUsername())) {
+            Optional<User> existingUserWithUsername = userRepository.findByUsername(request.username());
+            if (existingUserWithUsername.isPresent()
+                    && !existingUserWithUsername.get().getTelegramId().equals(telegramId)) {
+                throw new RuntimeException("Username уже используется другим пользователем: " + request.username());
+            }
+        }
+
+        if (request.firstName() != null) {
+            user.setFirstName(request.firstName());
+        }
+        if (request.lastName() != null) {
+            user.setLastName(request.lastName());
+        }
+        if (request.username() != null) {
+            user.setUsername(request.username());
+        }
+        if (request.email() != null) {
+            user.setEmail(request.email());
+        }
+        if (request.phone() != null) {
+            user.setPhone(request.phone());
+        }
         user.setUpdatedAt(LocalDateTime.now());
 
         return userRepository.save(user);

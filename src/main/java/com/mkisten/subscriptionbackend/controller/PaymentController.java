@@ -1,15 +1,13 @@
 package com.mkisten.subscriptionbackend.controller;
 
-import com.mkisten.subscriptionbackend.dto.CreatePaymentRequest;
+import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
+import com.mkisten.subscription.contract.dto.payment.CreatePaymentRequestDto;
+import com.mkisten.subscription.contract.dto.payment.PaymentResponseDto;
 import com.mkisten.subscriptionbackend.entity.Payment;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.service.PaymentService;
 import com.mkisten.subscriptionbackend.service.UserService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -25,23 +23,40 @@ public class PaymentController {
     private final UserService userService;
 
     @PostMapping("/create")
-    public ResponseEntity<Payment> createPayment(
-            @RequestBody CreatePaymentRequest request,
-            Authentication authentication) {
-        try {
-            String username = authentication.getName();
-            User user = userService.findByUsername(username);
+    public ResponseEntity<PaymentResponseDto> createPayment(
+            @RequestBody CreatePaymentRequestDto request,
+            Authentication authentication
+    ) {
+        String username = authentication.getName();
+        User user = userService.findByUsername(username);
 
-            Payment payment = paymentService.createPayment(
-                    user.getTelegramId(),
-                    request.getPlan(),
-                    request.getMonths()
-            );
-            return ResponseEntity.ok(payment);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.badRequest().build();
-        }
+        SubscriptionPlan plan = request.getPlan() != null
+                ? SubscriptionPlan.valueOf(request.getPlan().name())
+                : SubscriptionPlan.TRIAL;
+
+        Payment payment = paymentService.createPayment(
+                user.getTelegramId(),
+                plan,
+                request.getMonths()
+        );
+
+        PaymentResponseDto dto = mapPayment(payment);
+        return ResponseEntity.ok(dto);
+    }
+
+    private PaymentResponseDto mapPayment(Payment payment) {
+        PaymentResponseDto dto = new PaymentResponseDto();
+        dto.setId(payment.getId());
+        dto.setTelegramId(payment.getTelegramId());
+        dto.setAmount(payment.getAmount());
+        dto.setPlan(com.mkisten.subscription.contract.enums.SubscriptionPlanDto.valueOf(payment.getPlan().name()));
+        dto.setMonths(payment.getMonths());
+        dto.setStatus(payment.getStatus().name());
+        dto.setPhoneNumber(payment.getPhoneNumber());
+        dto.setCreatedAt(payment.getCreatedAt());
+        dto.setVerifiedAt(payment.getVerifiedAt());
+        dto.setAdminNotes(payment.getAdminNotes());
+        return dto;
     }
 
     @GetMapping("/my-payments")

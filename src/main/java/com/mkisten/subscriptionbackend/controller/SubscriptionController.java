@@ -1,13 +1,13 @@
 package com.mkisten.subscriptionbackend.controller;
 
-import com.mkisten.subscriptionbackend.dto.SubscriptionStatusResponse;
+import com.mkisten.subscription.contract.dto.subscription.SubscriptionStatusDto;
+import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.service.SubscriptionStatusService;
 import com.mkisten.subscriptionbackend.service.TelegramAuthService;
 import com.mkisten.subscriptionbackend.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -27,8 +27,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/subscription")
 @RequiredArgsConstructor
-@Tag(name = "Subscription", description = "API для управления подписками")
-@SecurityRequirement(name = "JWT")
+@Tag(name = "Subscription", description = "Управление подпиской и проверка статуса")
+@SecurityRequirement(name = "bearerAuth")
 public class SubscriptionController {
 
     private final UserService userService;
@@ -44,54 +44,49 @@ public class SubscriptionController {
             @ApiResponse(responseCode = "401", description = "Пользователь не аутентифицирован")
     })
     @GetMapping("/status")
-    public ResponseEntity<?> getSubscriptionStatus(
+    public ResponseEntity<SubscriptionStatusDto> getSubscriptionStatus(
             @AuthenticationPrincipal User user) {
-        try {
-            if (user == null) {
-                return ResponseEntity.status(401).body(
-                        Map.of("error", "USER_NOT_AUTHENTICATED", "message", "User not authenticated")
-                );
-            }
-
-            // Детальное логирование для отладки
-            log.info("=== SUBSCRIPTION STATUS CHECK ===");
-            log.info("User: {} {}", user.getFirstName(), user.getLastName());
-            log.info("Telegram ID: {}", user.getTelegramId());
-            log.info("Plan: {}", user.getSubscriptionPlan());
-            log.info("End Date: {}", user.getSubscriptionEndDate());
-            log.info("Today: {}", LocalDate.now());
-            log.info("Trial Used: {}", user.getTrialUsed());
-            log.info("DB Active Flag: {}", user.isActive());
-
-            boolean isActive = telegramAuthService.isSubscriptionActive(user);
-            long daysRemaining = telegramAuthService.getDaysRemaining(user);
-
-            log.info("=== CHECK RESULT ===");
-            log.info("Active: {}", isActive);
-            log.info("Days Remaining: {}", daysRemaining);
-
-            SubscriptionStatusResponse response = new SubscriptionStatusResponse(
-                    user.getTelegramId(),
-                    user.getFirstName(),
-                    user.getLastName(),
-                    user.getUsername(),
-                    user.getEmail(),
-                    user.getSubscriptionEndDate(),
-                    user.getSubscriptionPlan(),
-                    isActive,
-                    daysRemaining,
-                    user.getTrialUsed(),
-                    user.getRole().name()
-            );
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            log.error("Error getting subscription status", e);
-            return ResponseEntity.status(500).body(
-                    Map.of("error", "INTERNAL_ERROR", "message", "Failed to get subscription status: " + e.getMessage())
-            );
+        if (user == null) {
+            // здесь можно кинуть InvalidTokenException/SubscriptionExpiredException
+            // и отдать ApiErrorDto через GlobalExceptionHandler
+            return ResponseEntity.status(401).build();
         }
+
+        log.info("=== SUBSCRIPTION STATUS CHECK ===");
+        log.info("User: {} {}", user.getFirstName(), user.getLastName());
+        log.info("Telegram ID: {}", user.getTelegramId());
+        log.info("Plan: {}", user.getSubscriptionPlan());
+        log.info("End Date: {}", user.getSubscriptionEndDate());
+        log.info("Today: {}", LocalDate.now());
+        log.info("Trial Used: {}", user.getTrialUsed());
+        log.info("DB Active Flag: {}", user.isActive());
+
+        boolean isActive = telegramAuthService.isSubscriptionActive(user);
+        long daysRemaining = telegramAuthService.getDaysRemaining(user);
+
+        log.info("=== CHECK RESULT ===");
+        log.info("Active: {}", isActive);
+        log.info("Days Remaining: {}", daysRemaining);
+
+        SubscriptionStatusDto dto = new SubscriptionStatusDto();
+        dto.setTelegramId(user.getTelegramId());
+        dto.setFirstName(user.getFirstName());
+        dto.setLastName(user.getLastName());
+        dto.setUsername(user.getUsername());
+        dto.setEmail(user.getEmail());
+        dto.setSubscriptionEndDate(user.getSubscriptionEndDate());
+        // если в контракте SubscriptionPlanDto — маппишь через valueOf
+        dto.setSubscriptionPlan(
+                user.getSubscriptionPlan() != null
+                        ? SubscriptionPlanDto.valueOf(user.getSubscriptionPlan().name())
+                        : null
+        );
+        dto.setActive(isActive);
+        dto.setDaysRemaining(daysRemaining);
+        dto.setTrialUsed(user.getTrialUsed());
+        dto.setRole(user.getRole().name());
+
+        return ResponseEntity.ok(dto);
     }
 
     @Operation(
@@ -99,7 +94,7 @@ public class SubscriptionController {
             description = "Альтернативный метод для получения статуса подписки текущего пользователя"
     )
     @GetMapping("/my-status")
-    public ResponseEntity<?> getMySubscriptionStatus(
+    public ResponseEntity<SubscriptionStatusDto> getMySubscriptionStatus(
             @AuthenticationPrincipal User user) {
         return getSubscriptionStatus(user);
     }
@@ -109,30 +104,21 @@ public class SubscriptionController {
             description = "Проверяет активна ли подписка и возвращает оставшееся количество дней"
     )
     @GetMapping("/check-active")
-    public ResponseEntity<?> checkSubscriptionActive(
+    public ResponseEntity<SubscriptionCheckResponse> checkSubscriptionActive(
             @AuthenticationPrincipal User user) {
-        try {
-            if (user == null) {
-                return ResponseEntity.status(401).body(
-                        Map.of("error", "USER_NOT_AUTHENTICATED", "message", "User not authenticated")
-                );
-            }
-
-            boolean isActive = telegramAuthService.isSubscriptionActive(user);
-            long daysRemaining = telegramAuthService.getDaysRemaining(user);
-
-            return ResponseEntity.ok(new SubscriptionCheckResponse(
-                    isActive,
-                    daysRemaining,
-                    user.getSubscriptionEndDate(),
-                    user.getSubscriptionPlan()
-            ));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(
-                    Map.of("error", "INTERNAL_ERROR", "message", "Failed to check subscription")
-            );
+        if (user == null) {
+            return ResponseEntity.status(401).build();
         }
+
+        boolean isActive = telegramAuthService.isSubscriptionActive(user);
+        long daysRemaining = telegramAuthService.getDaysRemaining(user);
+
+        return ResponseEntity.ok(new SubscriptionCheckResponse(
+                isActive,
+                daysRemaining,
+                user.getSubscriptionEndDate(),
+                user.getSubscriptionPlan()
+        ));
     }
 
     @Operation(
@@ -140,40 +126,29 @@ public class SubscriptionController {
             description = "Принудительно обновляет статус подписки текущего пользователя"
     )
     @PostMapping("/refresh-status")
-    public ResponseEntity<?> refreshSubscriptionStatus(@AuthenticationPrincipal User user) {
-        try {
-            if (user == null) {
-                return ResponseEntity.status(401).body(
-                        Map.of("error", "USER_NOT_AUTHENTICATED", "message", "User not authenticated")
-                );
-            }
-
-            boolean wasActive = user.isActive();
-            subscriptionStatusService.updateUserSubscriptionStatus(user.getTelegramId());
-
-            // Получаем обновленного пользователя
-            User updatedUser = userService.findByTelegramId(user.getTelegramId());
-            boolean isNowActive = telegramAuthService.isSubscriptionActive(updatedUser);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", "Subscription status refreshed");
-            response.put("wasActive", wasActive);
-            response.put("isNowActive", isNowActive);
-            response.put("subscriptionEndDate", updatedUser.getSubscriptionEndDate());
-            response.put("today", LocalDate.now());
-
-            if (wasActive != isNowActive) {
-                response.put("statusChanged", true);
-            }
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            log.error("Error refreshing subscription status", e);
-            return ResponseEntity.status(500).body(
-                    Map.of("error", "Failed to refresh subscription status")
+    public ResponseEntity<Map<String, Object>> refreshSubscriptionStatus(
+            @AuthenticationPrincipal User user) {
+        if (user == null) {
+            return ResponseEntity.status(401).body(
+                    Map.of("error", "USER_NOT_AUTHENTICATED", "message", "User not authenticated")
             );
         }
+
+        boolean wasActive = user.isActive();
+        subscriptionStatusService.updateUserSubscriptionStatus(user.getTelegramId());
+
+        User updatedUser = userService.findByTelegramId(user.getTelegramId());
+        boolean isNowActive = telegramAuthService.isSubscriptionActive(updatedUser);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Subscription status refreshed");
+        response.put("wasActive", wasActive);
+        response.put("isNowActive", isNowActive);
+        response.put("subscriptionEndDate", updatedUser.getSubscriptionEndDate());
+        response.put("today", LocalDate.now());
+        response.put("statusChanged", wasActive != isNowActive);
+
+        return ResponseEntity.ok(response);
     }
 
     @Operation(
@@ -181,7 +156,8 @@ public class SubscriptionController {
             description = "Возвращает детальную диагностическую информацию о статусе подписки"
     )
     @GetMapping("/debug/detailed-status")
-    public ResponseEntity<?> getDetailedSubscriptionStatus(@AuthenticationPrincipal User user) {
+    public ResponseEntity<Map<String, Object>> getDetailedSubscriptionStatus(
+            @AuthenticationPrincipal User user) {
         if (user == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
         }
@@ -201,16 +177,16 @@ public class SubscriptionController {
         debugInfo.put("isEndDateEqualToday", endDate != null && endDate.isEqual(today));
         debugInfo.put("isEndDateBeforeToday", endDate != null && endDate.isBefore(today));
         debugInfo.put("calculatedActive", telegramAuthService.calculateSubscriptionActive(user));
-        debugInfo.put("daysBetween", endDate != null ? java.time.temporal.ChronoUnit.DAYS.between(today, endDate) : -1);
+        debugInfo.put("daysBetween", endDate != null
+                ? java.time.temporal.ChronoUnit.DAYS.between(today, endDate)
+                : -1);
 
-        // Результат проверки
         boolean isActive = telegramAuthService.isSubscriptionActive(user);
         debugInfo.put("serviceResult", isActive);
 
         return ResponseEntity.ok(debugInfo);
     }
 
-    // Record для простого ответа о проверке подписки
     @Schema(description = "Ответ о проверке подписки")
     public record SubscriptionCheckResponse(
             @Schema(description = "Активна ли подписка") boolean isActive,

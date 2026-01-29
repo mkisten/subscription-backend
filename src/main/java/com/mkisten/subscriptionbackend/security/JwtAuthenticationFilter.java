@@ -1,5 +1,6 @@
 package com.mkisten.subscriptionbackend.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.service.UserService;
 import jakarta.servlet.FilterChain;
@@ -8,13 +9,17 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -87,9 +92,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private void sendError(HttpServletResponse response, String message) throws IOException {
         log.warn("Authentication error: {}", message);
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//        response.setContentType("application/json");
+//        response.getWriter().write("{\"error\": \"UNAUTHORIZED\", \"message\": \"" + message + "\"}");
+        HttpStatus status = HttpStatus.UNAUTHORIZED;
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", status.value());
+        body.put("error", status.getReasonPhrase());
+        body.put("code", "UNAUTHORIZED");
+        body.put("message", message);
+
+        response.setStatus(status.value());
         response.setContentType("application/json");
-        response.getWriter().write("{\"error\": \"UNAUTHORIZED\", \"message\": \"" + message + "\"}");
+        response.getWriter().write(new ObjectMapper().writeValueAsString(body));
     }
 
     private boolean isPublicEndpoint(String path) {
