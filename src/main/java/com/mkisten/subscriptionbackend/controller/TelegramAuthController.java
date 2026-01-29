@@ -64,9 +64,9 @@ public class TelegramAuthController {
         SessionStatusDto dto = new SessionStatusDto();
         dto.setSessionId(sessionId);
         dto.setDeviceId(deviceId);
-        dto.setStatus(status.status().name());
-        dto.setMessage(status.message());
-        dto.setToken(status.jwtToken());
+        dto.setStatus(status.getStatus().name());
+        dto.setMessage(status.getMessage());
+        dto.setToken(status.getJwtToken());
 
         return ResponseEntity.ok(dto);
     }
