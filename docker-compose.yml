@@ -138,7 +138,7 @@ services:
     restart: unless-stopped
 
   graylog:
-    image: graylog/graylog:5.2
+    image: graylog/graylog:4.3.20
     container_name: graylog
     depends_on:
       - graylog_mongo
