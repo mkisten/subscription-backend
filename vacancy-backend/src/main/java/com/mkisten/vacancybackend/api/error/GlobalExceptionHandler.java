@@ -2,6 +2,7 @@ package com.mkisten.vacancybackend.api.error;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -31,15 +32,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiErrorResponse> handleResponseStatus(ResponseStatusException ex) {
-        HttpStatus status = ex.getStatusCode();
+        HttpStatusCode statusCode = ex.getStatusCode();
+        HttpStatus status = HttpStatus.resolve(statusCode.value());
         ApiErrorResponse body = ApiErrorResponse.builder()
                 .timestamp(Instant.now())
-                .status(status.value())
-                .error(status.name())
+                .status(statusCode.value())
+                .error(status != null ? status.name() : statusCode.toString())
                 .code("GENERIC_ERROR")
                 .message(ex.getReason())
                 .build();
-        return ResponseEntity.status(status).body(body);
+        return ResponseEntity.status(statusCode).body(body);
     }
 
     @ExceptionHandler(Exception.class)
