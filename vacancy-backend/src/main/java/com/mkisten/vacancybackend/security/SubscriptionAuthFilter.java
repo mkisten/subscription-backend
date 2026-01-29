@@ -112,6 +112,8 @@ public class SubscriptionAuthFilter extends OncePerRequestFilter {
 
                         // technical / infra
                         path.startsWith("/api/test") ||
+                        path.startsWith("/api/actuator") ||
+                        path.startsWith("/api/health") ||
                         path.startsWith("/actuator") ||
                         path.startsWith("/health") ||
                         path.startsWith("/swagger-ui") ||
