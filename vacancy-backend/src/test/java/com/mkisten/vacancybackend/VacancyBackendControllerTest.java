@@ -1,7 +1,13 @@
 package com.mkisten.vacancybackend;
 
 import com.mkisten.vacancybackend.client.AuthServiceClient;
-import com.mkisten.vacancybackend.controller.*;
+import com.mkisten.vacancybackend.controller.AuthController;
+import com.mkisten.vacancybackend.controller.NotificationController;
+import com.mkisten.vacancybackend.controller.SessionController;
+import com.mkisten.vacancybackend.controller.UserSettingsController;
+import com.mkisten.vacancybackend.controller.VacancyController;
+import com.mkisten.vacancybackend.controller.VacancySubscriptionController;
+import com.mkisten.vacancybackend.controller.VacancyTelegramAuthController;
 import com.mkisten.vacancybackend.dto.*;
 import com.mkisten.vacancybackend.entity.UserSettings;
 import com.mkisten.vacancybackend.entity.Vacancy;
@@ -132,9 +138,11 @@ class VacancyBackendControllerTest {
 
     @Test
     void controllerGlobalExceptionHandlerSubscriptionRequired() {
-        com.mkisten.vacancybackend.controller.GlobalExceptionHandler handler = new com.mkisten.vacancybackend.controller.GlobalExceptionHandler();
-        ResponseEntity<Object> response = handler.handleSubscriptionRequired(
-                new com.mkisten.vacancybackend.api.error.SubscriptionRequiredException("msg", "/path"));
+        com.mkisten.vacancybackend.api.error.GlobalExceptionHandler handler =
+                new com.mkisten.vacancybackend.api.error.GlobalExceptionHandler();
+        ResponseEntity<com.mkisten.vacancybackend.api.error.ApiErrorResponse> response =
+                handler.handleSubscriptionRequired(
+                        new com.mkisten.vacancybackend.api.error.SubscriptionRequiredException("msg", "/path"));
         assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
     }
 }
