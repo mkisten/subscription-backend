@@ -1,0 +1,347 @@
+name: Deploy Vacancy Backend
+
+on:
+  push:
+    branches: [main, master]
+
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v0.1.5
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            echo "🚀 Starting Vacancy Backend deployment from GitHub..."
+            
+            # Install/ensure Docker Compose v2
+            echo "🐳 Ensuring Docker Compose v2 is installed..."
+            if ! docker compose version &> /dev/null; then
+              echo "📥 Creating directory and downloading Docker Compose v2 plugin..."
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins
+              sudo curl -SL https://github.com/docker/compose/releases/download/v2.40.0/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose
+              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+              echo "✅ Docker Compose v2 installed!"
+            else
+              echo "✅ Docker Compose v2 already available."
+            fi
+            
+            # Cleanup and prepare
+            docker system prune -f
+            mkdir -p /root/vacancy-backend
+            cd /root/vacancy-backend
+            
+            # Use Git for deployment
+            echo "🔑 Setting up Git authentication..."
+            export GITHUB_PAT="${{ secrets.GITHUB_PAT }}"
+            
+            if [ -d ".git" ]; then
+              echo "📥 Pulling latest changes..."
+              git remote set-url origin https://$GITHUB_PAT@github.com/mkisten/vacancy-backend.git
+              git pull origin master
+            else
+              echo "📥 Cloning repository..."
+              git clone https://$GITHUB_PAT@github.com/mkisten/vacancy-backend.git /root/vacancy-backend-temp
+              mv /root/vacancy-backend-temp/.git ./
+              git reset --hard
+              rm -rf /root/vacancy-backend-temp
+            fi
+            
+            unset GITHUB_PAT
+            
+            # Create .env
+            echo "🔧 Creating .env file..."
+            cat > .env << EOF
+              # Database Configuration
+              POSTGRES_DB=vacancy_service
+              POSTGRES_USER=postgres
+              POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+
+              # JWT Configuration
+              JWT_SECRET=${{ secrets.JWT_SECRET }}
+              JWT_EXPIRATION=86400000
+
+              # Application Configuration
+              SERVER_PORT=8080
+              AUTH_SERVICE_URL=https://api.subscriptionhhapp.ru
+            
+              # HH.ru API Configuration (optional)
+              HH_BASE_URL=https://api.hh.ru
+              HH_TIMEOUT=10000
+              HH_REQUESTS_PER_SECOND=10
+            EOF
+            sed -i 's/^  //' .env
+
+            # Create init.sql for database
+            echo "🗄️ Creating init.sql..."
+            cat > init.sql << 'EOF'
+              -- Инициализация базы данных для сервиса вакансий
+              CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+              SET timezone = 'UTC';
+
+              COMMENT ON DATABASE vacancy_service IS 'Database for HH.ru vacancy monitoring service';
+
+              -- Таблица пользовательских настроек
+              CREATE TABLE IF NOT EXISTS user_settings (
+                id BIGSERIAL PRIMARY KEY,
+                telegram_id BIGINT UNIQUE NOT NULL,
+                search_queries JSONB,
+                filters JSONB,
+                notification_enabled BOOLEAN DEFAULT true,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+              );
+
+              -- Таблица вакансий
+              CREATE TABLE IF NOT EXISTS vacancy (
+                id BIGSERIAL PRIMARY KEY,
+                external_id VARCHAR(100) UNIQUE NOT NULL,
+                name VARCHAR(500) NOT NULL,
+                url VARCHAR(1000),
+                salary_from DECIMAL(12,2),
+                salary_to DECIMAL(12,2),
+                salary_currency VARCHAR(10),
+                employer_name VARCHAR(500),
+                employer_url VARCHAR(1000),
+                requirement TEXT,
+                responsibility TEXT,
+                experience VARCHAR(100),
+                employment VARCHAR(100),
+                schedule VARCHAR(100),
+                area VARCHAR(200),
+                published_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                status VARCHAR(50) DEFAULT 'NEW'
+              );
+
+              -- Таблица статусов вакансий для пользователей
+              CREATE TABLE IF NOT EXISTS vacancy_status (
+                id BIGSERIAL PRIMARY KEY,
+                telegram_id BIGINT NOT NULL,
+                vacancy_id BIGINT NOT NULL REFERENCES vacancy(id),
+                status VARCHAR(50) NOT NULL DEFAULT 'NEW', -- NEW, VIEWED, APPLIED, REJECTED
+                user_notes TEXT,
+                applied_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(telegram_id, vacancy_id)
+              );
+
+              -- Индексы для оптимизации
+              CREATE INDEX IF NOT EXISTS idx_user_settings_telegram_id ON user_settings(telegram_id);
+              CREATE INDEX IF NOT EXISTS idx_vacancy_external_id ON vacancy(external_id);
+              CREATE INDEX IF NOT EXISTS idx_vacancy_published_at ON vacancy(published_at);
+              CREATE INDEX IF NOT EXISTS idx_vacancy_status_telegram_id ON vacancy_status(telegram_id);
+              CREATE INDEX IF NOT EXISTS idx_vacancy_status_vacancy_id ON vacancy_status(vacancy_id);
+              CREATE INDEX IF NOT EXISTS idx_vacancy_status_created_at ON vacancy_status(created_at);
+
+              -- Функция для автоматического обновления updated_at
+              CREATE OR REPLACE FUNCTION update_updated_at_column()
+              RETURNS TRIGGER AS $$
+              BEGIN
+                NEW.updated_at = CURRENT_TIMESTAMP;
+                RETURN NEW;
+              END;
+              $$ language 'plpgsql';
+
+              -- Триггеры для обновления updated_at
+              CREATE TRIGGER update_user_settings_updated_at
+                BEFORE UPDATE ON user_settings
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+
+              CREATE TRIGGER update_vacancy_status_updated_at
+                BEFORE UPDATE ON vacancy_status
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+            EOF
+            sed -i 's/^  //' init.sql
+
+            # Create docker-compose.yml
+            echo "🐳 Creating docker-compose.yml..."
+            cat > docker-compose.yml << 'EOF'
+              version: '3.8'
+
+              services:
+                postgres:
+                  image: postgres:15-alpine
+                  container_name: vacancy_postgres
+                  environment:
+                    POSTGRES_DB: ${POSTGRES_DB}
+                    POSTGRES_USER: ${POSTGRES_USER}
+                    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+                  ports:
+                    - "5433:5432"
+                  volumes:
+                    - postgres_data:/var/lib/postgresql/data
+                    - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+                  networks:
+                    - vacancy_network
+                  healthcheck:
+                    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+                    interval: 30s
+                    timeout: 10s
+                    retries: 3
+
+                app:
+                  build: .
+                  container_name: vacancy_backend
+                  ports:
+                    - "8080:8080"
+                  environment:
+                    - SPRING_PROFILES_ACTIVE=docker
+                    - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+                    - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+                    - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+                    - JWT_SECRET=${JWT_SECRET}
+                    - JWT_EXPIRATION=${JWT_EXPIRATION}
+                    - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
+                    - SERVER_PORT=8080
+                    - SERVER_SERVLET_CONTEXT_PATH=/api
+                  depends_on:
+                    postgres:
+                      condition: service_healthy
+                  networks:
+                    - vacancy_network
+                  restart: unless-stopped
+                  healthcheck:
+                    test: ["CMD", "curl", "-f", "http://localhost:8080/api/actuator/health"]
+                    interval: 30s
+                    timeout: 10s
+                    retries: 3
+                    start_period: 60s
+
+              volumes:
+                postgres_data:
+
+              networks:
+                vacancy_network:
+                  driver: bridge
+            EOF
+            sed -i 's/^  //' docker-compose.yml
+
+            # Create Dockerfile
+            echo "🐋 Creating Dockerfile..."
+            cat > Dockerfile << 'EOF'
+              FROM eclipse-temurin:17-jdk-alpine as builder
+
+              WORKDIR /app
+
+              COPY mvnw .
+              RUN chmod +x mvnw
+
+              COPY .mvn .mvn
+              COPY pom.xml .
+
+              RUN ./mvnw dependency:go-offline -B
+
+              COPY src ./src
+
+              RUN ./mvnw clean package -DskipTests
+
+              FROM eclipse-temurin:17-jre-alpine
+
+              WORKDIR /app
+
+              RUN addgroup -S spring && adduser -S spring -G spring
+              USER spring:spring
+
+              COPY --from=builder /app/target/*.jar app.jar
+
+              ENV JAVA_OPTS="-Xmx512m -Xms256m -Djava.security.egd=file:/dev/./urandom"
+
+              HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+                CMD curl -f http://localhost:8080/api/actuator/health || exit 1
+
+              EXPOSE 8080
+
+              ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+            EOF
+            sed -i 's/^  //' Dockerfile
+
+            # Create application-docker.yml for Docker profile
+            echo "📄 Creating application-docker.yml..."
+            mkdir -p src/main/resources
+            cat > src/main/resources/application-docker.yml << 'EOF'
+              server:
+                port: 8080
+                servlet:
+                  context-path: /api
+
+              spring:
+                datasource:
+                  url: jdbc:postgresql://postgres:5432/${POSTGRES_DB:vacancy_service}
+                  username: ${POSTGRES_USER:postgres}
+                  password: ${POSTGRES_PASSWORD}
+                  driver-class-name: org.postgresql.Driver
+
+                jpa:
+                  hibernate:
+                    ddl-auto: update
+                  show-sql: false
+                  properties:
+                    hibernate:
+                      dialect: org.hibernate.dialect.PostgreSQLDialect
+                      format_sql: false
+                      jdbc:
+                        batch_size: 20
+                      order_inserts: true
+                      order_updates: true
+
+                jackson:
+                  time-zone: UTC
+                  date-format: yyyy-MM-dd HH:mm:ss
+
+              app:
+                auth-service:
+                  base-url: ${AUTH_SERVICE_URL:https://api.subscriptionhhapp.ru}
+                  timeout: 10000
+                  retry-attempts: 3
+
+                auth:
+                  jwt-secret: ${JWT_SECRET}
+                  token-expiration: ${JWT_EXPIRATION:86400000}
+
+                hhru:
+                  base-url: https://api.hh.ru
+                  timeout: 10000
+                  requests-per-second: 10
+
+              logging:
+                level:
+                  com.mkisten.vacancybackend: INFO
+                  org.hibernate.SQL: WARN
+                  org.springframework.security: WARN
+            EOF
+            sed -i 's/^  //' src/main/resources/application-docker.yml
+
+            # Deploy containers
+            echo "🔨 Building and starting containers..."
+            docker compose down
+            docker compose build --no-cache
+            docker compose up -d
+            
+            # Health check with retry
+            echo "🏥 Performing health check..."
+            for i in {1..15}; do
+              if curl -f http://localhost:8080/api/actuator/health; then
+                echo "✅ Health check passed!"
+                break
+              fi
+              echo "⏳ Health check failed, retrying in 10s... (attempt $i/15)"
+              sleep 10
+            done
+            
+            echo "🚀 Vacancy Backend deployed successfully from GitHub!"
+            echo "📊 Checking container status:"
+            docker compose ps
+            echo "💾 Disk usage:"
+            df -h

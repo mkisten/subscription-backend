@@ -1,0 +1,82 @@
+package com.mkisten.vacancybackend.service;
+
+import com.mkisten.vacancybackend.client.AuthServiceClient;
+import com.mkisten.vacancybackend.dto.SearchRequest;
+import com.mkisten.vacancybackend.dto.TokenResponse;
+import com.mkisten.vacancybackend.entity.UserSettings;
+import com.mkisten.vacancybackend.entity.Vacancy;
+import com.mkisten.vacancybackend.repository.UserSettingsRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class VacancyAutoUpdater {
+
+    private final UserSettingsRepository userSettingsRepository;
+    private final VacancySmartService vacancySmartService;
+    private final AuthServiceClient authServiceClient;
+
+    @Scheduled(fixedRate = 60000)
+    public void updateAllUsers() {
+        log.info("== Автообновление вакансий для всех пользователей ==");
+        List<UserSettings> settingsList = userSettingsRepository.findByAutoUpdateEnabledTrue();
+
+        for (UserSettings settings : settingsList) {
+            try {
+                if (!shouldUpdateNow(settings)) continue;
+
+                String token = getTokenForUser(settings);
+                if (token == null) {
+                    log.warn("Токен для пользователя {} не получен, пропускаем", settings.getTelegramId());
+                    continue;
+                }
+
+                // Подготовка запроса на  основе пользовательских настроек
+                SearchRequest request = new SearchRequest();
+                request.setQuery(settings.getSearchQuery());
+                request.setDays(settings.getDays());
+                request.setWorkTypes(settings.getWorkTypes());
+                request.setCountries(settings.getCountries());
+                request.setExcludeKeywords(settings.getExcludeKeywords());
+                request.setTelegramNotify(settings.getTelegramNotify());
+
+                // Поиск, сохранение и отправка
+                List<Vacancy> foundVacancies = vacancySmartService.searchWithUserSettings(
+                        request, token, settings.getTelegramId());
+
+                log.info("Auto-update completed for user {}. Found {} vacancies",
+                        settings.getTelegramId(), foundVacancies.size());
+
+            } catch (Exception e) {
+                log.error("Ошибка автообновления для user: {} — {}", settings.getTelegramId(), e.getMessage(), e);
+            }
+        }
+        log.info("== Автообновление вакансий завершено ==");
+    }
+
+    private String getTokenForUser(UserSettings settings) {
+        try {
+            Long telegramId = settings.getTelegramId();
+            if (telegramId == null) return null;
+            TokenResponse resp = authServiceClient.getTokenByTelegramId(telegramId);
+            if (resp == null || resp.getToken() == null || resp.getToken().isBlank()) {
+                log.warn("AuthServiceClient вернул пустой токен для {}", telegramId);
+                return null;
+            }
+            return resp.getToken();
+        } catch (Exception e) {
+            log.error("getTokenForUser: ошибка получения токена для {}: {}", settings.getTelegramId(), e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean shouldUpdateNow(UserSettings settings) {
+        return true; // Всегда обновляем (можно добавить логику интервала)
+    }
+}

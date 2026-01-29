@@ -1,0 +1,90 @@
+name: Deploy Vacancy Backend
+
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v0.1.5
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            echo "🚀 Starting Vacancy Backend deployment from GitHub..."
+            
+            # Install/ensure Docker Compose v2
+            echo "🐳 Ensuring Docker Compose v2 is installed..."
+            if ! docker compose version &> /dev/null; then
+              echo "📥 Installing Docker Compose v2..."
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins
+              sudo curl -SL https://github.com/docker/compose/releases/download/v2.40.0/docker-compose-linux-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose
+              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+              echo "✅ Docker Compose v2 installed!"
+            else
+              echo "✅ Docker Compose v2 already available."
+            fi
+            
+            # Cleanup and prepare
+            docker system prune -f
+            mkdir -p /root/vacancy-backend
+            cd /root/vacancy-backend
+            
+            # Use Git for deployment
+            echo "🔑 Setting up Git authentication..."
+            export DEPLOY_PAT="${{ secrets.DEPLOY_PAT }}"
+            
+            if [ -d ".git" ]; then
+              echo "📥 Pulling latest changes..."
+              git remote set-url origin https://$DEPLOY_PAT@github.com/mkisten/vacancy-backend.git
+              git pull origin master
+            else
+              echo "📥 Cloning repository..."
+              git clone https://$DEPLOY_PAT@github.com/mkisten/vacancy-backend.git /root/vacancy-backend-temp
+              mv /root/vacancy-backend-temp/.git ./
+              git reset --hard
+              rm -rf /root/vacancy-backend-temp
+            fi
+            
+            unset DEPLOY_PAT
+            
+            # Create .env file using echo commands
+            echo "🔧 Creating .env file..."
+            echo "POSTGRES_DB=vacancy_service" > .env
+            echo "POSTGRES_USER=postgres" >> .env
+            echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
+            echo "JWT_EXPIRATION=86400000" >> .env
+            echo "SERVER_PORT=8080" >> .env
+            echo "AUTH_SERVICE_URL=https://api.subscriptionhhapp.ru" >> .env
+            echo "HH_BASE_URL=https://api.hh.ru" >> .env
+            echo "HH_TIMEOUT=10000" >> .env
+            echo "HH_REQUESTS_PER_SECOND=10" >> .env
+
+            # Deploy containers
+            echo "🔨 Building and starting containers..."
+            docker compose down
+            docker compose build --no-cache
+            docker compose up -d
+            
+            # Health check with retry
+            echo "🏥 Performing health check..."
+            for i in {1..15}; do
+              if curl -f http://localhost:8080/api/actuator/health; then
+                echo "✅ Health check passed!"
+                break
+              fi
+              echo "⏳ Health check failed, retrying in 10s... (attempt $i/15)"
+              sleep 10
+            done
+            
+            echo "🚀 Vacancy Backend deployed successfully!"
+            docker compose ps
