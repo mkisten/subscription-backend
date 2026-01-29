@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS vacancies (
     schedule VARCHAR(50),
     salary VARCHAR(100),
     url VARCHAR(500),
+    sent_to_telegram BOOLEAN DEFAULT false,
     status VARCHAR(20) NOT NULL DEFAULT 'NEW',
     published_at TIMESTAMP,
     loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
