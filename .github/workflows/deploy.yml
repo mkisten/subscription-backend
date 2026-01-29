@@ -270,6 +270,11 @@ jobs:
               COPY .mvn .mvn
               COPY pom.xml .
 
+              COPY subscription-contract/pom.xml subscription-contract/pom.xml
+              COPY subscription-contract/src subscription-contract/src
+
+              RUN ./mvnw -f subscription-contract/pom.xml -DskipTests install
+
               RUN ./mvnw dependency:go-offline -B
 
               COPY src ./src
