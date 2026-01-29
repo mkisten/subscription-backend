@@ -72,7 +72,9 @@ services:
       retries: 3
 
   vacancy_app:
-    build: ./vacancy-backend
+    build:
+      context: .
+      dockerfile: vacancy-backend/Dockerfile
     container_name: vacancy_backend
     ports:
       - "8081:8081"

@@ -2,10 +2,14 @@ FROM eclipse-temurin:17-jdk-alpine as builder
 
 WORKDIR /app
 
-# Копируем только файлы, необходимые для установки зависимостей
 COPY mvnw .
 COPY .mvn .mvn
 COPY pom.xml .
+
+COPY subscription-contract/pom.xml subscription-contract/pom.xml
+COPY subscription-contract/src subscription-contract/src
+
+RUN ./mvnw -f subscription-contract/pom.xml -DskipTests install
 
 # Скачиваем зависимости
 RUN ./mvnw dependency:go-offline -B
