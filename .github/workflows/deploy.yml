@@ -45,6 +45,7 @@ jobs:
             if [ -d ".git" ]; then
               echo "📥 Pulling latest changes..."
               git remote set-url origin https://$GITHUB_PAT@github.com/mkisten/subscription-backend.git
+              git checkout -- Dockerfile docker-compose.yml
               git pull origin master
             else
               echo "📥 Cloning repository..."
