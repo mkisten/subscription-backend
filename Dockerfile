@@ -5,6 +5,7 @@ WORKDIR /app
 COPY mvnw .
 COPY .mvn .mvn
 COPY pom.xml .
+RUN chmod +x mvnw
 
 COPY subscription-contract/pom.xml subscription-contract/pom.xml
 COPY subscription-contract/src subscription-contract/src
