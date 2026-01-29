@@ -44,6 +44,11 @@ services:
     networks:
       - app_network
     restart: unless-stopped
+    logging:
+      driver: "gelf"
+      options:
+        gelf-address: "udp://${GRAYLOG_GELF_HOST:-127.0.0.1}:12201"
+        tag: "subscription_app"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
@@ -94,6 +99,11 @@ services:
     networks:
       - app_network
     restart: unless-stopped
+    logging:
+      driver: "gelf"
+      options:
+        gelf-address: "udp://${GRAYLOG_GELF_HOST:-127.0.0.1}:12201"
+        tag: "vacancy_app"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/api/actuator/health"]
       interval: 30s
@@ -101,9 +111,56 @@ services:
       retries: 3
       start_period: 60s
 
+  graylog_mongo:
+    image: mongo:6
+    container_name: graylog_mongo
+    volumes:
+      - graylog_mongo_data:/data/db
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  graylog_opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: graylog_opensearch
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - graylog_opensearch_data:/usr/share/opensearch/data
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  graylog:
+    image: graylog/graylog:5.2
+    container_name: graylog
+    depends_on:
+      - graylog_mongo
+      - graylog_opensearch
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET}
+      - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2}
+      - GRAYLOG_HTTP_EXTERNAL_URI=${GRAYLOG_HTTP_EXTERNAL_URI}
+      - GRAYLOG_MONGODB_URI=mongodb://graylog_mongo:27017/graylog
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://graylog_opensearch:9200
+    ports:
+      - "9000:9000"
+      - "12201:12201/udp"
+    networks:
+      - app_network
+    restart: unless-stopped
+
 volumes:
   subscription_postgres_data:
   vacancy_postgres_data:
+  graylog_mongo_data:
+  graylog_opensearch_data:
 
 networks:
   app_network:
