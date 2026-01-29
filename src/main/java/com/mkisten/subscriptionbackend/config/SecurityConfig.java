@@ -47,7 +47,7 @@ public class SecurityConfig {
 
                         // Публичные эндпоинты
                         .requestMatchers("/api/auth/**", "/api/telegram-auth/**",
-                                 "/api/test/**", "/health/**").permitAll()
+                                 "/api/test/**", "/health/**", "/actuator/**").permitAll()
 
                         // Admin endpoints - только для админов
                         .requestMatchers("/admin/**").hasRole("ADMIN")
