@@ -112,7 +112,7 @@ services:
       start_period: 60s
 
   graylog_mongo:
-    image: mongo:6
+    image: mongo:4.4
     container_name: graylog_mongo
     volumes:
       - graylog_mongo_data:/data/db
@@ -120,8 +120,8 @@ services:
       - app_network
     restart: unless-stopped
 
-  graylog_opensearch:
-    image: opensearchproject/opensearch:2.13.0
+  opensearch:
+    image: opensearchproject/opensearch:1.3.14
     container_name: graylog_opensearch
     environment:
       - discovery.type=single-node
@@ -142,13 +142,13 @@ services:
     container_name: graylog
     depends_on:
       - graylog_mongo
-      - graylog_opensearch
+      - opensearch
     environment:
       - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET}
       - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2}
       - GRAYLOG_HTTP_EXTERNAL_URI=${GRAYLOG_HTTP_EXTERNAL_URI}
       - GRAYLOG_MONGODB_URI=mongodb://graylog_mongo:27017/graylog
-      - GRAYLOG_ELASTICSEARCH_HOSTS=http://graylog_opensearch:9200
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch:9200
     ports:
       - "9000:9000"
       - "12201:12201/udp"
