@@ -1,45 +1,48 @@
+version: '3.8'
+
 services:
-  postgres:
+  subscription_postgres:
     image: postgres:15-alpine
     container_name: subscription_postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${SUBSCRIPTION_POSTGRES_DB}
+      POSTGRES_USER: ${SUBSCRIPTION_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${SUBSCRIPTION_POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - subscription_postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
-      - subscription_network
+      - app_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${SUBSCRIPTION_POSTGRES_USER}"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  app:
+  subscription_app:
     build: .
     container_name: subscription_backend
     ports:
       - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
-      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://subscription_postgres:5432/${SUBSCRIPTION_POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${SUBSCRIPTION_POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${SUBSCRIPTION_POSTGRES_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRATION=${JWT_EXPIRATION}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
       - SERVER_PORT=8080
       - SERVER_SSL_ENABLED=false
     depends_on:
-      postgres:
+      subscription_postgres:
         condition: service_healthy
     networks:
-      - subscription_network
+      - app_network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
@@ -48,9 +51,58 @@ services:
       retries: 3
       start_period: 40s
 
+  vacancy_postgres:
+    image: postgres:15-alpine
+    container_name: vacancy_postgres
+    environment:
+      POSTGRES_DB: ${VACANCY_POSTGRES_DB}
+      POSTGRES_USER: ${VACANCY_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${VACANCY_POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - vacancy_postgres_data:/var/lib/postgresql/data
+      - ./vacancy-backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VACANCY_POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  vacancy_app:
+    build: ./vacancy-backend
+    container_name: vacancy_backend
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://vacancy_postgres:5432/${VACANCY_POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${VACANCY_POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${VACANCY_POSTGRES_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRATION=${JWT_EXPIRATION}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://subscription_app:8080}
+      - SERVER_PORT=8081
+      - SERVER_SERVLET_CONTEXT_PATH=/api
+    depends_on:
+      vacancy_postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/api/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
 volumes:
-  postgres_data:
+  subscription_postgres_data:
+  vacancy_postgres_data:
 
 networks:
-  subscription_network:
+  app_network:
     driver: bridge
