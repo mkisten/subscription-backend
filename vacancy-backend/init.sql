@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS user_countries (
 
 -- Таблица вакансий
 CREATE TABLE IF NOT EXISTS vacancies (
-                                         id VARCHAR(255) PRIMARY KEY,
+                                         id VARCHAR(255) NOT NULL,
     user_telegram_id BIGINT NOT NULL,
     title VARCHAR(500) NOT NULL,
     employer VARCHAR(255),
@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS vacancies (
     sent_to_telegram BOOLEAN DEFAULT false,
     status VARCHAR(20) NOT NULL DEFAULT 'NEW',
     published_at TIMESTAMP,
-    loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id, user_telegram_id)
     );
 
 -- Индексы для оптимизации производительности
