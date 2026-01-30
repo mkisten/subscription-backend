@@ -532,15 +532,15 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 return;
             }
 
-            try {
-                User user = userService.findByTelegramId(chatId);
+            Optional<User> userOpt = userService.findByTelegramIdOptional(chatId);
+            if (userOpt.isPresent()) {
                 log.info("User found, proceeding with auth: {}", chatId);
-                handleExistingUserAuth(chatId, user, sessionId, actualDeviceId);
-
-            } catch (Exception e) {
-                log.info("User not registered, offering registration: {}", chatId);
-                sendRegistrationOfferWithAuth(chatId, sessionId, actualDeviceId, telegramUser);
+                handleExistingUserAuth(chatId, userOpt.get(), sessionId, actualDeviceId);
+                return;
             }
+
+            log.info("User not registered, registering and completing auth: {}", chatId);
+            completeRegistrationWithAuth(chatId, telegramUser, sessionId, actualDeviceId);
 
         } catch (Exception e) {
             log.error("Auth deep link error for user {}", chatId, e);
