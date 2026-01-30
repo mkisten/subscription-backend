@@ -9,8 +9,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -41,11 +43,29 @@ public class VacancySmartService {
         if (request.getTelegramNotify() == null)
             request.setTelegramNotify(settings.getTelegramNotify());
 
-        log.info("Smart search for user {} with query: {}", userTelegramId, request.getQuery());
+        List<String> queries = splitQueries(request.getQuery());
+        log.info("Smart search for user {} with queries: {}", userTelegramId, queries);
 
-        // Поиск вакансий через hhruApiService
-        List<Vacancy> foundVacancies = hhruApiService.searchVacancies(request, token);
-        List<Vacancy> filteredVacancies = filterByExcludeKeywords(foundVacancies, request.getExcludeKeywords());
+        // Поиск вакансий по каждому ключевому слову через hhruApiService
+        Map<String, Vacancy> uniqueVacancies = new LinkedHashMap<>();
+        for (String query : queries) {
+            SearchRequest perQuery = new SearchRequest();
+            perQuery.setQuery(query);
+            perQuery.setDays(request.getDays());
+            perQuery.setWorkTypes(request.getWorkTypes());
+            perQuery.setCountries(request.getCountries());
+            perQuery.setExcludeKeywords(request.getExcludeKeywords());
+            perQuery.setTelegramNotify(request.getTelegramNotify());
+
+            List<Vacancy> batch = hhruApiService.searchVacancies(perQuery, token);
+            for (Vacancy vacancy : batch) {
+                uniqueVacancies.putIfAbsent(vacancy.getId(), vacancy);
+            }
+        }
+        List<Vacancy> filteredVacancies = filterByExcludeKeywords(
+                new ArrayList<>(uniqueVacancies.values()),
+                request.getExcludeKeywords()
+        );
 
         // Сохраняем только новые вакансии (проверяется уникальность по (id+userTelegramId))
         vacancyService.saveVacancies(token, filteredVacancies);
@@ -57,6 +77,20 @@ public class VacancySmartService {
 
         // Возвращаем все найденные вакансии
         return filteredVacancies;
+    }
+
+    private List<String> splitQueries(String query) {
+        if (!StringUtils.hasText(query)) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (String raw : query.split(",")) {
+            String trimmed = raw.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        return result.isEmpty() ? List.of() : result;
     }
 
     private List<Vacancy> filterByExcludeKeywords(List<Vacancy> vacancies, String excludeKeywords) {
