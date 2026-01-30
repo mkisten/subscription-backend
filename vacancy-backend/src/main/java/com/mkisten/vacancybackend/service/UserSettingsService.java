@@ -52,9 +52,33 @@ public class UserSettingsService {
         Long telegramId = getTelegramIdByToken(token);
         UserSettings existingSettings = settingsRepository.findByTelegramId(telegramId)
                 .orElseGet(() -> createDefaultSettings(telegramId));
-        // обновляем поля как раньше...
-        existingSettings.setSearchQuery(newSettings.getSearchQuery());
-        // ...и другие поля
+        if (newSettings.getSearchQuery() != null) {
+            existingSettings.setSearchQuery(newSettings.getSearchQuery());
+        }
+        if (newSettings.getDays() != null) {
+            existingSettings.setDays(newSettings.getDays());
+        }
+        if (newSettings.getExcludeKeywords() != null) {
+            existingSettings.setExcludeKeywords(newSettings.getExcludeKeywords());
+        }
+        if (newSettings.getWorkTypes() != null) {
+            existingSettings.setWorkTypes(newSettings.getWorkTypes());
+        }
+        if (newSettings.getCountries() != null) {
+            existingSettings.setCountries(newSettings.getCountries());
+        }
+        if (newSettings.getTelegramNotify() != null) {
+            existingSettings.setTelegramNotify(newSettings.getTelegramNotify());
+        }
+        if (newSettings.getAutoUpdateEnabled() != null) {
+            existingSettings.setAutoUpdateEnabled(newSettings.getAutoUpdateEnabled());
+        }
+        if (newSettings.getAutoUpdateInterval() != null) {
+            existingSettings.setAutoUpdateInterval(newSettings.getAutoUpdateInterval());
+        }
+        if (newSettings.getTheme() != null) {
+            existingSettings.setTheme(newSettings.getTheme());
+        }
 
         UserSettings saved = settingsRepository.save(existingSettings);
 
