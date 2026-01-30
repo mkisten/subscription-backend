@@ -90,7 +90,7 @@ services:
       - SPRING_DATASOURCE_PASSWORD=${VACANCY_POSTGRES_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRATION=${JWT_EXPIRATION}
-      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://subscription_app:8080}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-https://api.subscriptionhhapp.ru}
       - SERVER_PORT=8081
       - SERVER_SERVLET_CONTEXT_PATH=/api
     depends_on:
