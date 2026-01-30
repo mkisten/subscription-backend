@@ -16,11 +16,11 @@ import java.util.Set;
 @Repository
 public interface VacancyRepository extends JpaRepository<Vacancy, VacancyKey> {
 
-    // Найти все вакансии пользователя
-    List<Vacancy> findByUserTelegramIdOrderByPublishedAtDesc(Long userTelegramId);
+    // Найти все вакансии пользователя (новые сверху, затем по времени загрузки)
+    List<Vacancy> findByUserTelegramIdOrderByStatusAscLoadedAtDesc(Long userTelegramId);
 
-    // Найти вакансии пользователя по статусу
-    List<Vacancy> findByUserTelegramIdAndStatusOrderByPublishedAtDesc(
+    // Найти вакансии пользователя по статусу (по времени загрузки)
+    List<Vacancy> findByUserTelegramIdAndStatusOrderByLoadedAtDesc(
             Long userTelegramId, VacancyStatus status);
 
     // Проверка существования вакансии для пользователя

@@ -113,9 +113,9 @@ public class VacancyService {
     public List<Vacancy> getUserVacancies(String token, VacancyStatus status) {
         Long userTelegramId = getTelegramId(token);
         if (status == null) {
-            return vacancyRepository.findByUserTelegramIdOrderByPublishedAtDesc(userTelegramId);
+            return vacancyRepository.findByUserTelegramIdOrderByStatusAscLoadedAtDesc(userTelegramId);
         }
-        return vacancyRepository.findByUserTelegramIdAndStatusOrderByPublishedAtDesc(userTelegramId, status);
+        return vacancyRepository.findByUserTelegramIdAndStatusOrderByLoadedAtDesc(userTelegramId, status);
     }
 
     /**
