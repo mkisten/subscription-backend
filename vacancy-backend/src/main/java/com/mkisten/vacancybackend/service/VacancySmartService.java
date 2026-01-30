@@ -8,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -43,9 +45,10 @@ public class VacancySmartService {
 
         // Поиск вакансий через hhruApiService
         List<Vacancy> foundVacancies = hhruApiService.searchVacancies(request, token);
+        List<Vacancy> filteredVacancies = filterByExcludeKeywords(foundVacancies, request.getExcludeKeywords());
 
         // Сохраняем только новые вакансии (проверяется уникальность по (id+userTelegramId))
-        vacancyService.saveVacancies(token, foundVacancies);
+        vacancyService.saveVacancies(token, filteredVacancies);
 
         // Отправить только неотправленные вакансии в Telegram
         if (Boolean.TRUE.equals(settings.getTelegramNotify())) {
@@ -53,6 +56,44 @@ public class VacancySmartService {
         }
 
         // Возвращаем все найденные вакансии
-        return foundVacancies;
+        return filteredVacancies;
+    }
+
+    private List<Vacancy> filterByExcludeKeywords(List<Vacancy> vacancies, String excludeKeywords) {
+        if (vacancies == null || vacancies.isEmpty()) {
+            return vacancies;
+        }
+        if (!StringUtils.hasText(excludeKeywords)) {
+            return vacancies;
+        }
+
+        List<String> keywords = new ArrayList<>();
+        for (String raw : excludeKeywords.split(",")) {
+            String trimmed = raw.trim();
+            if (!trimmed.isEmpty()) {
+                keywords.add(trimmed.toLowerCase(Locale.ROOT));
+            }
+        }
+        if (keywords.isEmpty()) {
+            return vacancies;
+        }
+
+        List<Vacancy> result = new ArrayList<>(vacancies.size());
+        for (Vacancy vacancy : vacancies) {
+            String title = vacancy.getTitle();
+            String normalized = title == null ? "" : title.toLowerCase(Locale.ROOT);
+            boolean excluded = false;
+            for (String keyword : keywords) {
+                if (normalized.contains(keyword)) {
+                    excluded = true;
+                    break;
+                }
+            }
+            if (!excluded) {
+                result.add(vacancy);
+            }
+        }
+
+        return result;
     }
 }
