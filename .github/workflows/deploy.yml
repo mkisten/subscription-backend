@@ -57,35 +57,41 @@ jobs:
             
             unset GITHUB_PAT
             
-            # Create .env
-            echo "🔧 Creating .env file..."
-            cat > .env << EOF
-              # Admin Configuration
-              ADMIN_CHAT_ID=6927880904
+            # Create or update .env without wiping custom values (e.g., GRAYLOG_*)
+            echo "🔧 Ensuring .env file..."
+            if [ ! -f .env ]; then
+              touch .env
+            fi
 
-              # Database Configuration
-              SUBSCRIPTION_POSTGRES_DB=subscription_db
-              SUBSCRIPTION_POSTGRES_USER=postgres
-              SUBSCRIPTION_POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            upsert_env() {
+              local key="$1"
+              local value="$2"
+              if grep -q "^${key}=" .env; then
+                sed -i "s|^${key}=.*|${key}=${value}|" .env
+              else
+                echo "${key}=${value}" >> .env
+              fi
+            }
 
-              VACANCY_POSTGRES_DB=vacancy_service
-              VACANCY_POSTGRES_USER=postgres
-              VACANCY_POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            upsert_env "ADMIN_CHAT_ID" "6927880904"
 
-              # JWT Configuration
-              JWT_SECRET=${{ secrets.JWT_SECRET }}
-              JWT_EXPIRATION=86400
+            upsert_env "SUBSCRIPTION_POSTGRES_DB" "subscription_db"
+            upsert_env "SUBSCRIPTION_POSTGRES_USER" "postgres"
+            upsert_env "SUBSCRIPTION_POSTGRES_PASSWORD" "${{ secrets.POSTGRES_PASSWORD }}"
 
-              # Telegram Bot Configuration
-              TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-              TELEGRAM_BOT_USERNAME=hhsubscription_bot
+            upsert_env "VACANCY_POSTGRES_DB" "vacancy_service"
+            upsert_env "VACANCY_POSTGRES_USER" "postgres"
+            upsert_env "VACANCY_POSTGRES_PASSWORD" "${{ secrets.POSTGRES_PASSWORD }}"
 
-              # Application Configuration
-              FRONTEND_URL=http://localhost:3000
-              SERVER_PORT=8080
-              AUTH_SERVICE_URL=http://subscription_app:8080
-            EOF
-            sed -i 's/^  //' .env
+            upsert_env "JWT_SECRET" "${{ secrets.JWT_SECRET }}"
+            upsert_env "JWT_EXPIRATION" "86400"
+
+            upsert_env "TELEGRAM_BOT_TOKEN" "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+            upsert_env "TELEGRAM_BOT_USERNAME" "hhsubscription_bot"
+
+            upsert_env "FRONTEND_URL" "http://localhost:3000"
+            upsert_env "SERVER_PORT" "8080"
+            upsert_env "AUTH_SERVICE_URL" "https://api.subscriptionhhapp.ru"
 
             # Deploy containers
             echo "🔨 Building and starting containers..."
