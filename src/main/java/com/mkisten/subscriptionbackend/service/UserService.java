@@ -60,7 +60,7 @@ public class UserService {
         User user = findByTelegramId(telegramId);
 
         // Проверяем уникальность email, если он изменяется
-        if (request.email() != null && !request.email().equals(user.getEmail())) {
+        if (request.email() != null && !request.email().isBlank() && !request.email().equals(user.getEmail())) {
             Optional<User> existingUserWithEmail = userRepository.findByEmail(request.email());
             if (existingUserWithEmail.isPresent() && !existingUserWithEmail.get().getTelegramId().equals(telegramId)) {
                 throw new RuntimeException("Email уже используется другим пользователем: " + request.email());
