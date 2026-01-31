@@ -550,18 +550,6 @@ public class TelegramBotService extends TelegramLongPollingBot {
 
     private void handleExistingUserAuth(Long chatId, User user, String sessionId, String deviceId) {
         try {
-            boolean isSubscriptionActive = telegramAuthService.isSubscriptionActive(user);
-
-            if (!isSubscriptionActive) {
-                sendTextMessage(chatId,
-                        "❌ **Подписка не активна**\n\n" +
-                                "Ваша подписка истекла " + user.getSubscriptionEndDate() + "\n\n" +
-                                "Для продления подписки отправьте `/pay`"
-                );
-                log.warn("Subscription not active for user: {}", chatId);
-                return;
-            }
-
             String jwtToken = jwtUtil.generateToken(user.getTelegramId());
             log.info("Generated JWT token for user: {}, session: {}", chatId, sessionId);
 
@@ -573,15 +561,25 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 return;
             }
 
-            sendTextMessage(chatId,
-                    "✅ **Авторизация прошла успешно!**\n\n" +
-                            "👤 **Имя:** " + formatUserName(user) + "\n" +
-                            "💎 **Тариф:** " + user.getSubscriptionPlan().getDescription() + "\n" +
-                            "📅 **Подписка до:** " + user.getSubscriptionEndDate() + "\n" +
-                            "⏱ **Осталось дней:** " + telegramAuthService.getDaysRemaining(user) + "\n\n" +
-                            "🔐 **Вы можете вернуться в приложение.**\n" +
-                            "Авторизация произойдет автоматически."
-            );
+            boolean isSubscriptionActive = telegramAuthService.isSubscriptionActive(user);
+            String planLabel = user.getSubscriptionPlan() != null
+                    ? user.getSubscriptionPlan().getDescription()
+                    : "Не указан";
+            String subscriptionInfo = isSubscriptionActive
+                    ? "✅ **Авторизация прошла успешно!**\n\n"
+                    + "👤 **Имя:** " + formatUserName(user) + "\n"
+                    + "💎 **Тариф:** " + planLabel + "\n"
+                    + "📅 **Подписка до:** " + user.getSubscriptionEndDate() + "\n"
+                    + "⏱ **Осталось дней:** " + telegramAuthService.getDaysRemaining(user) + "\n\n"
+                    + "🔐 **Вы можете вернуться в приложение.**\n"
+                    + "Авторизация произойдет автоматически."
+                    : "⚠️ **Подписка не активна**\n\n"
+                    + "Ваша подписка истекла " + user.getSubscriptionEndDate() + "\n"
+                    + "Для продления подписки отправьте `/pay`\n\n"
+                    + "🔐 **Вы можете вернуться в приложение.**\n"
+                    + "Авторизация произойдет автоматически.";
+
+            sendTextMessage(chatId, subscriptionInfo);
 
             log.info("User authenticated via deep link: {}, session: {}", chatId, sessionId);
 
