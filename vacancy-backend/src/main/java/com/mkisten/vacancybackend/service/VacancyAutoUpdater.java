@@ -2,6 +2,7 @@ package com.mkisten.vacancybackend.service;
 
 import com.mkisten.vacancybackend.client.AuthServiceClient;
 import com.mkisten.vacancybackend.dto.SearchRequest;
+import com.mkisten.vacancybackend.dto.SubscriptionStatusResponse;
 import com.mkisten.vacancybackend.dto.TokenResponse;
 import com.mkisten.vacancybackend.entity.UserSettings;
 import com.mkisten.vacancybackend.entity.Vacancy;
@@ -34,6 +35,13 @@ public class VacancyAutoUpdater {
                 String token = getTokenForUser(settings);
                 if (token == null) {
                     log.warn("Токен для пользователя {} не получен, пропускаем", settings.getTelegramId());
+                    continue;
+                }
+
+                SubscriptionStatusResponse status = authServiceClient.getSubscriptionStatus(token);
+                if (status == null || !Boolean.TRUE.equals(status.getActive())) {
+                    log.info("Подписка не активна для пользователя {}, автообновление пропущено",
+                            settings.getTelegramId());
                     continue;
                 }
 

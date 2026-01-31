@@ -72,7 +72,11 @@ public class VacancySmartService {
 
         // Отправить только неотправленные вакансии в Telegram
         if (Boolean.TRUE.equals(settings.getTelegramNotify())) {
-            telegramService.sendAllUnsentVacanciesToTelegram(token, userTelegramId);
+            if (userSettingsService.isSubscriptionActive(token)) {
+                telegramService.sendAllUnsentVacanciesToTelegram(token, userTelegramId);
+            } else {
+                log.info("Подписка не активна для пользователя {}, отправка Telegram отключена", userTelegramId);
+            }
         }
 
         // Возвращаем все найденные вакансии
