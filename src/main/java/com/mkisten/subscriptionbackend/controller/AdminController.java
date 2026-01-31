@@ -349,7 +349,9 @@ public class AdminController {
             @Schema(description = "Фамилия") String lastName,
             @Schema(description = "Username") String username,
             @Schema(description = "Email") String email,
-            @Schema(description = "Телефон") String phone
+            @Schema(description = "Телефон") String phone,
+            @Schema(description = "Количество дней подписки") Integer subscriptionDays,
+            @Schema(description = "Тариф подписки") SubscriptionPlan subscriptionPlan
     ) {}
 
     // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========

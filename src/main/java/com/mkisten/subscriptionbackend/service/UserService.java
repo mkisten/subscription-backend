@@ -90,6 +90,16 @@ public class UserService {
         if (request.phone() != null) {
             user.setPhone(request.phone());
         }
+        if (request.subscriptionPlan() != null) {
+            user.setSubscriptionPlan(request.subscriptionPlan());
+        }
+        if (request.subscriptionDays() != null) {
+            user.setSubscriptionEndDate(LocalDate.now().plusDays(request.subscriptionDays()));
+        } else if (request.subscriptionPlan() == SubscriptionPlan.LIFETIME) {
+            user.setSubscriptionEndDate(LocalDate.now().plusDays(36500));
+        }
+
+        user.setActive(subscriptionCalculator.calculateSubscriptionActive(user));
 
         user.setUpdatedAt(LocalDateTime.now());
 
