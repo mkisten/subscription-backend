@@ -69,15 +69,6 @@ public class SubscriptionAuthFilter extends OncePerRequestFilter {
             SubscriptionStatusResponse subStatus =
                     authServiceClient.getSubscriptionStatus(token);
 
-            if (subStatus == null || Boolean.FALSE.equals(subStatus.getActive())) {
-                // Можно различать EXPIRED / TRIAL_ONLY и т.д., если в DTO есть поля
-                writeError(response,
-                        HttpStatus.FORBIDDEN,
-                        "SUBSCRIPTION_INACTIVE",
-                        "Subscription is not active");
-                return;
-            }
-
             // 5. Кладём полезные данные в request, чтобы контроллеры могли их читать
             request.setAttribute("telegramId", subStatus.getTelegramId());
             request.setAttribute("subscriptionStatus", subStatus);
