@@ -90,7 +90,19 @@ public class UserSettingsService {
                 log.warn("Failed to send settings update notification: {}", e);
             }
         }
-        log.info("Settings updated for user {}", telegramId);
+        log.info(
+                "Настройки пользователя {} обновлены: ключевые слова='{}', исключения='{}', период={} дн., типы работы={}, регионы={}, автообновление={}, интервал автообновления={} мин., рассылка в Telegram={}, тема='{}'",
+                telegramId,
+                saved.getSearchQuery(),
+                saved.getExcludeKeywords(),
+                saved.getDays(),
+                saved.getWorkTypes(),
+                saved.getCountries(),
+                saved.getAutoUpdateEnabled(),
+                saved.getAutoUpdateInterval(),
+                saved.getTelegramNotify(),
+                saved.getTheme()
+        );
         return saved;
     }
 
