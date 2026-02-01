@@ -21,6 +21,7 @@ public class VacancyService {
 
     private final VacancyRepository vacancyRepository;
     private final AuthServiceClient authServiceClient;
+    private final VacancyStreamService vacancyStreamService;
 
     private Long getTelegramId(String token) {
 
@@ -56,6 +57,7 @@ public class VacancyService {
         if (!vacanciesToSave.isEmpty()) {
             List<Vacancy> saved = vacancyRepository.saveAll(vacanciesToSave);
             log.info("Saved {} new vacancies for user {}", saved.size(), userTelegramId);
+            vacancyStreamService.emitNewVacancies(userTelegramId, saved);
             return saved;
         }
         log.info("No new vacancies found for user {}", userTelegramId);

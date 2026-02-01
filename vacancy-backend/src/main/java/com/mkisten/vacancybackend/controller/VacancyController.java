@@ -6,6 +6,7 @@ import com.mkisten.vacancybackend.entity.Vacancy;
 import com.mkisten.vacancybackend.entity.VacancyStatus;
 import com.mkisten.vacancybackend.service.UserSettingsService;
 import com.mkisten.vacancybackend.service.VacancyService;
+import com.mkisten.vacancybackend.service.VacancyStreamService;
 import com.mkisten.vacancybackend.service.VacancySmartService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -14,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -28,6 +30,7 @@ public class VacancyController {
     private final VacancyService vacancyService;
     private final VacancySmartService vacancySmartService;
     private final UserSettingsService userSettingsService;
+    private final VacancyStreamService vacancyStreamService;
 
     @Operation(summary = "Поиск вакансий с учетом пользовательских настроек")
     @PostMapping("/search")
@@ -70,6 +73,15 @@ public class VacancyController {
             log.error("Error getting vacancies: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    @Operation(summary = "SSE поток новых вакансий")
+    @GetMapping(value = "/stream", produces = "text/event-stream")
+    public SseEmitter streamVacancies(
+            @RequestHeader("Authorization") String authorization) {
+        String token = authorization.replace("Bearer ", "");
+        Long userTelegramId = userSettingsService.getSettings(token).getTelegramId();
+        return vacancyStreamService.subscribe(userTelegramId);
     }
 
     @PostMapping("/batch")
