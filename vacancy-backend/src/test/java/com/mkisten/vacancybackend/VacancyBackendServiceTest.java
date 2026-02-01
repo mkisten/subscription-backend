@@ -27,7 +27,8 @@ class VacancyBackendServiceTest {
     void vacancyServiceSaveVacanciesFiltersExisting() {
         VacancyRepository vacancyRepository = mock(VacancyRepository.class);
         AuthServiceClient authServiceClient = mock(AuthServiceClient.class);
-        VacancyService service = new VacancyService(vacancyRepository, authServiceClient);
+        VacancyStreamService vacancyStreamService = mock(VacancyStreamService.class);
+        VacancyService service = new VacancyService(vacancyRepository, authServiceClient, vacancyStreamService);
 
         ProfileResponse profile = new ProfileResponse();
         profile.setTelegramId(10L);

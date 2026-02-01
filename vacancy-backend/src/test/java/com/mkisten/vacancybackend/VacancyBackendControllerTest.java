@@ -16,6 +16,7 @@ import com.mkisten.vacancybackend.service.TelegramNotificationService;
 import com.mkisten.vacancybackend.service.UserSettingsService;
 import com.mkisten.vacancybackend.service.VacancyService;
 import com.mkisten.vacancybackend.service.VacancySmartService;
+import com.mkisten.vacancybackend.service.VacancyStreamService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -83,7 +84,13 @@ class VacancyBackendControllerTest {
         VacancyService vacancyService = mock(VacancyService.class);
         VacancySmartService vacancySmartService = mock(VacancySmartService.class);
         UserSettingsService userSettingsService = mock(UserSettingsService.class);
-        VacancyController controller = new VacancyController(vacancyService, vacancySmartService, userSettingsService);
+        VacancyStreamService vacancyStreamService = mock(VacancyStreamService.class);
+        VacancyController controller = new VacancyController(
+                vacancyService,
+                vacancySmartService,
+                userSettingsService,
+                vacancyStreamService
+        );
 
         when(vacancyService.getNewVacanciesCount("token")).thenReturn(5L);
 
@@ -122,7 +129,13 @@ class VacancyBackendControllerTest {
         VacancyService vacancyService = mock(VacancyService.class);
         VacancySmartService vacancySmartService = mock(VacancySmartService.class);
         UserSettingsService userSettingsService = mock(UserSettingsService.class);
-        VacancyController controller = new VacancyController(vacancyService, vacancySmartService, userSettingsService);
+        VacancyStreamService vacancyStreamService = mock(VacancyStreamService.class);
+        VacancyController controller = new VacancyController(
+                vacancyService,
+                vacancySmartService,
+                userSettingsService,
+                vacancyStreamService
+        );
 
         UserSettings settings = new UserSettings(1L);
         when(userSettingsService.getSettings("token")).thenReturn(settings);
