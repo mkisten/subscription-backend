@@ -53,7 +53,7 @@ public class SecurityConfig {
                         .requestMatchers("/admin/**").hasRole("ADMIN")
 
                         // User endpoints - для аутентифицированных пользователей
-                        .requestMatchers("/api/auth/me", "/api/bot/**","/api/auth/profile", "/api/subscription/**").authenticated()
+                        .requestMatchers("/api/auth/me", "/api/bot/**","/api/auth/profile", "/api/subscription/**", "/api/support/**").authenticated()
 
                         // Все остальные - требуют аутентификации
                         .anyRequest().authenticated()

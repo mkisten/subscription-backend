@@ -4,6 +4,7 @@ import com.mkisten.subscriptionbackend.entity.AuthSession;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.Payment;
+import com.mkisten.subscriptionbackend.entity.SupportMessage;
 import com.mkisten.subscriptionbackend.event.PaymentNotificationEvent;
 import com.mkisten.subscriptionbackend.event.PaymentProcessedEvent;
 import com.mkisten.subscriptionbackend.repository.PaymentRepository;
@@ -52,6 +53,9 @@ public class TelegramBotService extends TelegramLongPollingBot {
     private final PaymentRepository paymentRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final BotMessageService botMessageService;
+    private final SupportMessageService supportMessageService;
+
+    private final Set<Long> supportWaitingUsers = ConcurrentHashMap.newKeySet();
 
     @Getter
     public enum SubscriptionPlanWithPrice {
@@ -113,6 +117,19 @@ public class TelegramBotService extends TelegramLongPollingBot {
 
         log.info("Received message from {}: {}", chatId, text);
 
+        if (supportWaitingUsers.contains(chatId)) {
+            if (text != null && text.startsWith("/")) {
+                if ("/cancel".equals(text)) {
+                    supportWaitingUsers.remove(chatId);
+                    sendTextMessage(chatId, "❌ Отправка сообщения в поддержку отменена.");
+                    return;
+                }
+            } else {
+                handleSupportMessage(chatId, telegramUser, text);
+                return;
+            }
+        }
+
         if (text.startsWith("/start")) {
             handleStartCommand(chatId, text, telegramUser);
         } else if (text.equals("/register")) {
@@ -123,6 +140,8 @@ public class TelegramBotService extends TelegramLongPollingBot {
             handleStatusCommand(chatId);
         } else if (text.equals("/help")) {
             handleHelpCommand(chatId);
+        } else if (text.equals("/support")) {
+            handleSupportCommand(chatId);
         } else if (text.equals("/admin")) {
             handleAdminCommand(chatId);
         } else if (text.equals("/pay") || text.equals("/payment")) {
@@ -834,6 +853,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 "`/pay` - оплата подписки\n" +
                 "`/my_payments` - история платежей\n" +
                 "`/status` - статус вашей подписки\n" +
+                "`/support` - написать в поддержку\n" +
                 "`/help` - показать эту справку\n\n" +
                 "💳 **Оплата:** через Т-Банк по номеру +79779104605\n" +
                 "📞 **Поддержка:** contact@yourdomain.com";
@@ -891,8 +911,58 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 "🤔 **Неизвестная команда**\n\n" +
                         "Используйте:\n" +
                         "`/start` - начать работу\n" +
+                        "`/support` - написать в поддержку\n" +
                         "`/help` - помощь"
         );
+    }
+
+    private void handleSupportCommand(Long chatId) {
+        supportWaitingUsers.add(chatId);
+        sendTextMessage(chatId,
+                "🆘 **Поддержка**\n\n" +
+                        "Напишите ваше сообщение одним текстом. " +
+                        "Чтобы отменить, отправьте `/cancel`."
+        );
+    }
+
+    private void handleSupportMessage(Long chatId, org.telegram.telegrambots.meta.api.objects.User telegramUser, String text) {
+        supportWaitingUsers.remove(chatId);
+        if (text == null || text.trim().isEmpty()) {
+            sendTextMessage(chatId, "Сообщение пустое. Попробуйте снова: /support");
+            return;
+        }
+
+        SupportMessage supportMessage = supportMessageService.createMessage(chatId, text.trim(), "BOT");
+        notifyAdminAboutSupport(supportMessage, telegramUser);
+
+        sendTextMessage(chatId,
+                "✅ Сообщение отправлено в поддержку.\n" +
+                        "Мы постараемся ответить как можно быстрее."
+        );
+    }
+
+    public void notifyAdminAboutSupport(SupportMessage message, org.telegram.telegrambots.meta.api.objects.User telegramUser) {
+        try {
+            if (adminChatId == null || adminChatId.trim().isEmpty()) {
+                log.warn("Admin chat ID not configured, skipping support notification");
+                return;
+            }
+
+            String userLine = telegramUser != null
+                    ? (telegramUser.getFirstName() != null ? telegramUser.getFirstName() : "") +
+                    (telegramUser.getLastName() != null ? " " + telegramUser.getLastName() : "")
+                    : "Пользователь";
+
+            String adminMessage = "🆘 **Новое обращение в поддержку**\n\n" +
+                    "👤 **Пользователь:** " + userLine + "\n" +
+                    "🆔 **Telegram ID:** " + message.getTelegramId() + "\n" +
+                    "🕒 **Время:** " + message.getCreatedAt() + "\n\n" +
+                    "💬 **Сообщение:**\n" + message.getMessage();
+
+            sendTextMessage(Long.parseLong(adminChatId), adminMessage);
+        } catch (Exception e) {
+            log.error("Error notifying admin about support message", e);
+        }
     }
 
     private void sendWelcomeMessage(Long chatId) {

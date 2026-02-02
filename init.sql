@@ -78,6 +78,19 @@ CREATE TABLE IF NOT EXISTS payments (
     verified_at TIMESTAMP
     );
 
+-- Таблица support_messages (обращения в поддержку)
+CREATE TABLE IF NOT EXISTS support_messages (
+                                                id BIGSERIAL PRIMARY KEY,
+                                                telegram_id BIGINT NOT NULL,
+                                                message TEXT NOT NULL,
+                                                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                                source VARCHAR(10) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'NEW',
+    admin_reply TEXT,
+    replied_at TIMESTAMP,
+    admin_telegram_id BIGINT
+    );
+
 -- Индексы для таблицы payment_history
 CREATE INDEX IF NOT EXISTS idx_payment_history_user_id ON payment_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_payment_history_status ON payment_history(status);
@@ -112,12 +125,18 @@ CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 CREATE INDEX IF NOT EXISTS idx_payments_created_at ON payments(created_at);
 CREATE INDEX IF NOT EXISTS idx_payments_verified_at ON payments(verified_at);
 
+-- Индексы для таблицы support_messages
+CREATE INDEX IF NOT EXISTS idx_support_messages_telegram_id ON support_messages(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_support_messages_created_at ON support_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_support_messages_status ON support_messages(status);
+
 -- Комментарии к таблицам
 COMMENT ON TABLE payment_history IS 'История платежей пользователей';
 COMMENT ON TABLE users IS 'Пользователи Telegram бота подписок';
 COMMENT ON TABLE messages IS 'История сообщений бота';
 COMMENT ON TABLE auth_sessions IS 'Сессии авторизации через Telegram';
 COMMENT ON TABLE payments IS 'Платежи пользователей';
+COMMENT ON TABLE support_messages IS 'Обращения пользователей в поддержку';
 
 -- Комментарии к колонкам payment_history
 COMMENT ON COLUMN payment_history.amount IS 'Сумма платежа';
@@ -151,6 +170,10 @@ COMMENT ON COLUMN payments.months IS 'Количество месяцев под
 COMMENT ON COLUMN payments.plan IS 'План подписки';
 COMMENT ON COLUMN payments.status IS 'Статус платежа';
 COMMENT ON COLUMN payments.verified_at IS 'Время верификации платежа';
+
+-- Комментарии к колонкам support_messages
+COMMENT ON COLUMN support_messages.source IS 'Источник обращения: WEB или BOT';
+COMMENT ON COLUMN support_messages.status IS 'Статус обращения: NEW или REPLIED';
 
 -- Функция для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
