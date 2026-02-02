@@ -36,7 +36,7 @@ public class VacancyAutoUpdater {
         LocalDateTime now = LocalDateTime.now();
         List<UserSettings> settingsList = userSettingsRepository.findDueUsers(
                 now,
-                PageRequest.of(0, BATCH_SIZE, Sort.by(Sort.Order.asc("nextRunAt")).nullsFirst())
+                PageRequest.of(0, BATCH_SIZE, Sort.by(Sort.Order.asc("nextRunAt")))
         );
 
         for (UserSettings settings : settingsList) {
