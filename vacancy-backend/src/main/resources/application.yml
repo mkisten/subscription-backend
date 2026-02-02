@@ -37,6 +37,8 @@ app:
     base-url: https://api.hh.ru
     timeout: 10000
     requests-per-second: 10
+  auto-update:
+    workers: 1
 
 logging:
 
