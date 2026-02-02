@@ -84,11 +84,12 @@ public class VacancyAutoUpdater {
 
         int enqueued = 0;
         for (UserSettings settings : settingsList) {
-            if (settings.getId() == null) {
+            if (settings.getTelegramId() == null) {
                 continue;
             }
-            if (queuedUsers.add(settings.getId())) {
-                queue.offer(settings.getId());
+            Long telegramId = settings.getTelegramId();
+            if (queuedUsers.add(telegramId)) {
+                queue.offer(telegramId);
                 enqueued++;
             }
         }
@@ -108,9 +109,9 @@ public class VacancyAutoUpdater {
         }
     }
 
-    private void processUser(Long settingsId) {
+    private void processUser(Long telegramId) {
         try {
-            Optional<UserSettings> optionalSettings = userSettingsRepository.findById(settingsId);
+            Optional<UserSettings> optionalSettings = userSettingsRepository.findByTelegramId(telegramId);
             if (optionalSettings.isEmpty()) {
                 return;
             }
@@ -149,16 +150,16 @@ public class VacancyAutoUpdater {
                     settings.getTelegramId(), foundVacancies.size());
 
         } catch (Exception e) {
-            log.error("Ошибка автообновления для user: {} — {}", settingsId, e.getMessage(), e);
+            log.error("Ошибка автообновления для user: {} — {}", telegramId, e.getMessage(), e);
         } finally {
             try {
                 LocalDateTime now = LocalDateTime.now();
-                userSettingsRepository.findById(settingsId).ifPresent(settings -> {
+                userSettingsRepository.findByTelegramId(telegramId).ifPresent(settings -> {
                     scheduleNextRun(settings, now);
                     userSettingsRepository.save(settings);
                 });
             } finally {
-                queuedUsers.remove(settingsId);
+                queuedUsers.remove(telegramId);
             }
         }
     }
