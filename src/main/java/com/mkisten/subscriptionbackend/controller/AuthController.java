@@ -33,7 +33,10 @@ public class AuthController {
      */
     @GetMapping("/token")
     public ResponseEntity<TokenResponseDto> getToken(@RequestParam Long telegramId) {
-        User user = userService.findByTelegramId(telegramId);
+        User user = userService.findByTelegramIdOptional(telegramId).orElse(null);
+        if (user == null) {
+            return ResponseEntity.notFound().build();
+        }
         String token = jwtUtil.generateToken(user.getTelegramId());
 
         // Обновляем время последнего входа
