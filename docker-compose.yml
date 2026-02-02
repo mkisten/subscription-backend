@@ -5,6 +5,7 @@ services:
     image: postgres:15-alpine
     container_name: subscription_postgres
     environment:
+      TZ: Europe/Moscow
       POSTGRES_DB: ${SUBSCRIPTION_POSTGRES_DB}
       POSTGRES_USER: ${SUBSCRIPTION_POSTGRES_USER}
       POSTGRES_PASSWORD: ${SUBSCRIPTION_POSTGRES_PASSWORD}
@@ -28,6 +29,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      - TZ=Europe/Moscow
       - SPRING_PROFILES_ACTIVE=docker
       - SPRING_DATASOURCE_URL=jdbc:postgresql://subscription_postgres:5432/${SUBSCRIPTION_POSTGRES_DB}
       - SPRING_DATASOURCE_USERNAME=${SUBSCRIPTION_POSTGRES_USER}
@@ -61,6 +63,7 @@ services:
     image: postgres:15-alpine
     container_name: vacancy_postgres
     environment:
+      TZ: Europe/Moscow
       POSTGRES_DB: ${VACANCY_POSTGRES_DB}
       POSTGRES_USER: ${VACANCY_POSTGRES_USER}
       POSTGRES_PASSWORD: ${VACANCY_POSTGRES_PASSWORD}
@@ -86,6 +89,7 @@ services:
     ports:
       - "8081:8081"
     environment:
+      - TZ=Europe/Moscow
       - SPRING_PROFILES_ACTIVE=docker
       - SPRING_DATASOURCE_URL=jdbc:postgresql://vacancy_postgres:5432/${VACANCY_POSTGRES_DB}
       - SPRING_DATASOURCE_USERNAME=${VACANCY_POSTGRES_USER}
