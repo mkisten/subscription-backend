@@ -80,7 +80,7 @@ public class VacancyController {
     public SseEmitter streamVacancies(
             @RequestHeader("Authorization") String authorization) {
         String token = authorization.replace("Bearer ", "");
-        Long userTelegramId = userSettingsService.getSettings(token).getTelegramId();
+        Long userTelegramId = userSettingsService.getTelegramId(token);
         return vacancyStreamService.subscribe(userTelegramId);
     }
 

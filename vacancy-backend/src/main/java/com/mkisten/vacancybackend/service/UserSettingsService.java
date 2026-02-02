@@ -27,6 +27,11 @@ public class UserSettingsService {
         return authServiceClient.getCurrentUserProfile(token).getTelegramId();
     }
 
+    /** Получить Telegram ID из токена без обращения к настройкам */
+    public Long getTelegramId(String token) {
+        return getTelegramIdByToken(token);
+    }
+
     @Transactional(readOnly = true)
     public UserSettings getSettings(String token) {
         Long telegramId = getTelegramIdByToken(token);
