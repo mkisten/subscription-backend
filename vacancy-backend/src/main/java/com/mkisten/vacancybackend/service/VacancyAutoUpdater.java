@@ -39,6 +39,7 @@ public class VacancyAutoUpdater {
     private final AuthServiceClient authServiceClient;
 
     private static final int BATCH_SIZE = 200;
+    private static final int BATCH_PROCESS_SIZE = 10;
     private static final int JITTER_PERCENT = 20;
 
     @Value("${app.auto-update.workers:1}")
@@ -101,11 +102,21 @@ public class VacancyAutoUpdater {
     private void workerLoop() {
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
-                Long settingsId = queue.take();
-                processUser(settingsId);
+                Long first = queue.take();
+                processBatch(first);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
+        }
+    }
+
+    private void processBatch(Long firstTelegramId) {
+        List<Long> batch = new java.util.ArrayList<>(BATCH_PROCESS_SIZE);
+        batch.add(firstTelegramId);
+        queue.drainTo(batch, BATCH_PROCESS_SIZE - 1);
+
+        for (Long telegramId : batch) {
+            processUser(telegramId);
         }
     }
 
