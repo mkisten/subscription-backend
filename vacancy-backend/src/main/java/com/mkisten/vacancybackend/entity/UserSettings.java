@@ -54,6 +54,12 @@ public class UserSettings {
     @Column(name = "auto_update_interval")
     private Integer autoUpdateInterval = 30;
 
+    @Column(name = "last_run_at")
+    private LocalDateTime lastRunAt;
+
+    @Column(name = "next_run_at")
+    private LocalDateTime nextRunAt;
+
     @Column(name = "theme")
     private String theme = "light";
 

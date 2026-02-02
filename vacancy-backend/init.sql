@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS user_settings (
     telegram_notify BOOLEAN DEFAULT false,
     auto_update_enabled BOOLEAN DEFAULT false,
     auto_update_interval INTEGER DEFAULT 30,
+    last_run_at TIMESTAMP,
+    next_run_at TIMESTAMP,
     theme VARCHAR(50) DEFAULT 'light',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -53,6 +55,7 @@ CREATE TABLE IF NOT EXISTS vacancies (
 
 -- Индексы для оптимизации производительности
 CREATE INDEX IF NOT EXISTS idx_user_settings_telegram_id ON user_settings(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_user_settings_next_run_at ON user_settings(next_run_at);
 CREATE INDEX IF NOT EXISTS idx_user_work_types_telegram_id ON user_work_types(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_user_countries_telegram_id ON user_countries(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_vacancies_user_telegram_id ON vacancies(user_telegram_id);

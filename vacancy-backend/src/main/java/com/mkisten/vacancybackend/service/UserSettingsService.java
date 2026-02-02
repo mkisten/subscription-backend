@@ -9,6 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.concurrent.ThreadLocalRandom;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -80,6 +83,7 @@ public class UserSettingsService {
             existingSettings.setTheme(newSettings.getTheme());
         }
 
+        applyAutoUpdateSchedule(existingSettings);
         UserSettings saved = settingsRepository.save(existingSettings);
 
         // Отправить уведомление об обновлении
@@ -112,6 +116,7 @@ public class UserSettingsService {
         UserSettings settings = getSettings(token);
         settings.setAutoUpdateEnabled(enabled);
         settings.setAutoUpdateInterval(intervalMinutes);
+        applyAutoUpdateSchedule(settings);
         settingsRepository.save(settings);
         log.info("Auto-update settings updated for user {}: enabled={}, interval={}min",
                 telegramId, enabled, intervalMinutes);
@@ -120,6 +125,21 @@ public class UserSettingsService {
     private UserSettings createDefaultSettings(Long telegramId) {
         UserSettings settings = new UserSettings(telegramId);
         return settingsRepository.save(settings);
+    }
+
+    private void applyAutoUpdateSchedule(UserSettings settings) {
+        if (!Boolean.TRUE.equals(settings.getAutoUpdateEnabled())) {
+            settings.setNextRunAt(null);
+            return;
+        }
+
+        int interval = settings.getAutoUpdateInterval() == null ? 30 : settings.getAutoUpdateInterval();
+        if (interval < 1) {
+            interval = 1;
+        }
+        int jitterMax = Math.max(1, (int) Math.round(interval * 0.2));
+        int jitter = ThreadLocalRandom.current().nextInt(jitterMax + 1);
+        settings.setNextRunAt(LocalDateTime.now().plusMinutes(interval + jitter));
     }
 }
 

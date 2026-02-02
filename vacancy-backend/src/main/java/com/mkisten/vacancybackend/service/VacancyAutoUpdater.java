@@ -9,9 +9,13 @@ import com.mkisten.vacancybackend.entity.Vacancy;
 import com.mkisten.vacancybackend.repository.UserSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.List;
 
 @Slf4j
@@ -23,15 +27,20 @@ public class VacancyAutoUpdater {
     private final VacancySmartService vacancySmartService;
     private final AuthServiceClient authServiceClient;
 
+    private static final int BATCH_SIZE = 200;
+    private static final int JITTER_PERCENT = 20;
+
     @Scheduled(fixedRate = 60000)
     public void updateAllUsers() {
-        log.info("== Автообновление вакансий для всех пользователей ==");
-        List<UserSettings> settingsList = userSettingsRepository.findByAutoUpdateEnabledTrue();
+        log.info("== Автообновление вакансий (пачка) ==");
+        LocalDateTime now = LocalDateTime.now();
+        List<UserSettings> settingsList = userSettingsRepository.findDueUsers(
+                now,
+                PageRequest.of(0, BATCH_SIZE, Sort.by(Sort.Order.asc("nextRunAt")).nullsFirst())
+        );
 
         for (UserSettings settings : settingsList) {
             try {
-                if (!shouldUpdateNow(settings)) continue;
-
                 String token = getTokenForUser(settings);
                 if (token == null) {
                     log.warn("Токен для пользователя {} не получен, пропускаем", settings.getTelegramId());
@@ -63,9 +72,12 @@ public class VacancyAutoUpdater {
 
             } catch (Exception e) {
                 log.error("Ошибка автообновления для user: {} — {}", settings.getTelegramId(), e.getMessage(), e);
+            } finally {
+                scheduleNextRun(settings, now);
+                userSettingsRepository.save(settings);
             }
         }
-        log.info("== Автообновление вакансий завершено ==");
+        log.info("== Автообновление вакансий завершено. Обработано: {} ==", settingsList.size());
     }
 
     private String getTokenForUser(UserSettings settings) {
@@ -84,7 +96,15 @@ public class VacancyAutoUpdater {
         }
     }
 
-    private boolean shouldUpdateNow(UserSettings settings) {
-        return true; // Всегда обновляем (можно добавить логику интервала)
+    private void scheduleNextRun(UserSettings settings, LocalDateTime baseTime) {
+        int interval = settings.getAutoUpdateInterval() == null ? 30 : settings.getAutoUpdateInterval();
+        if (interval < 1) {
+            interval = 1;
+        }
+        int jitterMax = Math.max(1, (int) Math.round(interval * (JITTER_PERCENT / 100.0)));
+        int jitter = ThreadLocalRandom.current().nextInt(jitterMax + 1);
+
+        settings.setLastRunAt(baseTime);
+        settings.setNextRunAt(baseTime.plusMinutes(interval + jitter));
     }
 }
