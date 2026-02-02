@@ -165,10 +165,11 @@ class SubscriptionBackendServiceTest {
         PaymentRepository paymentRepository = mock(PaymentRepository.class);
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
         BotMessageService botMessageService = mock(BotMessageService.class);
+        SupportMessageService supportMessageService = mock(SupportMessageService.class);
 
         TelegramBotService service = new TelegramBotService(
                 userService, telegramAuthService, authSessionService, jwtUtil,
-                paymentRepository, publisher, botMessageService);
+                paymentRepository, publisher, botMessageService, supportMessageService);
         ReflectionTestUtils.setField(service, "botUsername", "mybot");
 
         String link = service.generateAuthDeepLink("s", "d");
