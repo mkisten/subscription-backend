@@ -46,7 +46,21 @@ jobs:
               echo "📥 Pulling latest changes..."
               git remote set-url origin https://$GITHUB_PAT@github.com/mkisten/subscription-backend.git
               git checkout -- Dockerfile docker-compose.yml
+              if ! git diff --quiet || ! git diff --cached --quiet; then
+                echo "📦 Stashing local changes..."
+                git stash push -u -m "deploy-autostash"
+                STASHED=1
+              else
+                STASHED=0
+              fi
               git pull origin master
+              if [ "$STASHED" -eq 1 ]; then
+                echo "📦 Restoring stashed changes..."
+                if ! git stash pop; then
+                  echo "❌ Stash pop failed due to conflicts. Resolve on server and rerun deploy."
+                  exit 1
+                fi
+              fi
             else
               echo "📥 Cloning repository..."
               git clone https://$GITHUB_PAT@github.com/mkisten/subscription-backend.git /root/subscription-backend-temp
