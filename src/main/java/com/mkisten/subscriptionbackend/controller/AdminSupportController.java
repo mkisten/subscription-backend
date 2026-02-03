@@ -60,4 +60,16 @@ public class AdminSupportController {
                 "id", message.getId()
         ));
     }
+
+    @Operation(summary = "Отметить сообщения пользователя как прочитанные")
+    @PostMapping("/messages/{telegramId}/read")
+    public ResponseEntity<?> markRead(
+            @PathVariable Long telegramId
+    ) {
+        int updated = supportMessageService.markReadForUser(telegramId);
+        return ResponseEntity.ok(Map.of(
+                "message", "Messages marked as read",
+                "updated", updated
+        ));
+    }
 }

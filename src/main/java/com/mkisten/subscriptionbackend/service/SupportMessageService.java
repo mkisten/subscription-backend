@@ -6,6 +6,7 @@ import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.repository.SupportMessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -53,6 +54,11 @@ public class SupportMessageService {
         message.setAdminTelegramId(adminTelegramId);
         message.setStatus("REPLIED");
         return supportMessageRepository.save(message);
+    }
+
+    @Transactional
+    public int markReadForUser(Long telegramId) {
+        return supportMessageRepository.markReadByTelegramId(telegramId);
     }
 
     private SupportMessageDto toDto(SupportMessage message) {
