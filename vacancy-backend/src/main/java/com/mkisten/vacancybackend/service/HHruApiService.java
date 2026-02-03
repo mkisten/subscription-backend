@@ -60,15 +60,15 @@ public class HHruApiService {
             ProfileResponse profile = authServiceClient.getCurrentUserProfile(token);
             Long telegramId = profile.getTelegramId();
 
-            String url = buildSearchUrl(request);
-            log.info("HH.ru search URL: {}", url);
+            java.net.URI uri = buildSearchUri(request);
+            log.info("HH.ru search URL: {}", uri);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setAccept(List.of(MediaType.APPLICATION_JSON));
             headers.set(HttpHeaders.USER_AGENT, "Mozilla/5.0 (compatible; VacancyBot/1.0)");
             HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
+            ResponseEntity<Map> response = restTemplate.exchange(uri, HttpMethod.GET, entity, Map.class);
 
             if (response.getBody() != null) {
                 Map<String, Object> body = response.getBody();
@@ -96,7 +96,7 @@ public class HHruApiService {
         return new ArrayList<>();
     }
 
-    private String buildSearchUrl(SearchRequest request) {
+    private java.net.URI buildSearchUri(SearchRequest request) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl + "/vacancies")
                 .queryParam("text", request.getQuery())
                 .queryParam("period", request.getDays())
@@ -115,7 +115,7 @@ public class HHruApiService {
             }
         }
 
-        return builder.build().encode(java.nio.charset.StandardCharsets.UTF_8).toUriString();
+        return builder.build().encode(java.nio.charset.StandardCharsets.UTF_8).toUri();
     }
 
     private List<Vacancy> convertToVacancies(List<Map<String, Object>> items, Long telegramId) {
