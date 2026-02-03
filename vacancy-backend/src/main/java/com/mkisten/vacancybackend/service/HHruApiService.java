@@ -7,7 +7,11 @@ import com.mkisten.vacancybackend.entity.Vacancy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -59,10 +63,20 @@ public class HHruApiService {
             String url = buildSearchUrl(request);
             log.debug("Searching vacancies with URL: {}", url);
 
-            ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            headers.set(HttpHeaders.USER_AGENT, "Mozilla/5.0 (compatible; VacancyBot/1.0)");
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
 
             if (response.getBody() != null) {
                 List<Map<String, Object>> items = (List<Map<String, Object>>) response.getBody().get("items");
+                if (items == null) {
+                    log.warn("HH.ru response has no items. Status={}, keys={}",
+                            response.getStatusCode(),
+                            response.getBody().keySet());
+                }
                 return convertToVacancies(items, telegramId);
             }
         } catch (Exception e) {
