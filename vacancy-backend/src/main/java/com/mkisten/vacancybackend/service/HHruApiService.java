@@ -80,23 +80,6 @@ public class HHruApiService {
                 .queryParam("only_with_salary", false)
                 .queryParam("search_field", "name");
 
-        // Добавляем фильтры по schedule (тип работы)
-        if (request.getWorkTypes() != null && !request.getWorkTypes().isEmpty()) {
-            request.getWorkTypes().forEach(workType -> {
-                switch (workType) {
-                    case "remote":
-                        builder.queryParam("schedule", "remote");
-                        break;
-                    case "hybrid":
-                        // HH.ru не имеет прямого параметра для гибрида
-                        break;
-                    case "office":
-                        builder.queryParam("schedule", "fullDay");
-                        break;
-                }
-            });
-        }
-
         // Добавляем фильтры по area (регион)
         if (request.getCountries() != null && !request.getCountries().isEmpty()) {
             if (request.getCountries().contains("russia")) {
@@ -136,10 +119,10 @@ public class HHruApiService {
                     vacancy.setCity((String) area.get("name"));
                 }
 
-                // Schedule
-                Map<String, Object> schedule = (Map<String, Object>) item.get("schedule");
-                if (schedule != null) {
-                    vacancy.setSchedule((String) schedule.get("name"));
+                // Work format (REMOTE / HYBRID / ON_SITE) -> нормализуем в человекочитаемый вид
+                String workFormatLabel = extractWorkFormatLabel(item);
+                if (workFormatLabel != null) {
+                    vacancy.setSchedule(workFormatLabel);
                 }
 
                 // Salary
@@ -198,5 +181,49 @@ public class HHruApiService {
             log.debug("Error formatting salary: {}", e.getMessage());
         }
         return "Не указана";
+    }
+
+    private String extractWorkFormatLabel(Map<String, Object> item) {
+        List<String> labels = new ArrayList<>();
+        Object workFormatObj = item.get("work_format");
+        if (workFormatObj instanceof List) {
+            List<Map<String, Object>> workFormats = (List<Map<String, Object>>) workFormatObj;
+            for (Map<String, Object> wf : workFormats) {
+                String id = wf.get("id") != null ? wf.get("id").toString() : "";
+                switch (id) {
+                    case "REMOTE":
+                        labels.add("Удалённо");
+                        break;
+                    case "HYBRID":
+                        labels.add("Гибрид");
+                        break;
+                    case "ON_SITE":
+                        labels.add("Офис");
+                        break;
+                    default:
+                        String name = wf.get("name") != null ? wf.get("name").toString() : null;
+                        if (name != null && !name.isBlank()) {
+                            labels.add(name);
+                        }
+                        break;
+                }
+            }
+        }
+
+        if (!labels.isEmpty()) {
+            return String.join(", ", labels);
+        }
+
+        // Фоллбек на schedule, если work_format отсутствует
+        Map<String, Object> schedule = (Map<String, Object>) item.get("schedule");
+        if (schedule != null) {
+            String scheduleName = schedule.get("name") != null ? schedule.get("name").toString() : "";
+            if (scheduleName.toLowerCase().contains("удал")) {
+                return "Удалённо";
+            }
+            return "Офис";
+        }
+
+        return null;
     }
 }

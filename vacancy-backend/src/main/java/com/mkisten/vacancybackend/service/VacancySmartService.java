@@ -62,8 +62,12 @@ public class VacancySmartService {
                 uniqueVacancies.putIfAbsent(vacancy.getId(), vacancy);
             }
         }
-        List<Vacancy> filteredVacancies = filterByExcludeKeywords(
+        List<Vacancy> byWorkType = filterByWorkTypes(
                 new ArrayList<>(uniqueVacancies.values()),
+                request.getWorkTypes()
+        );
+        List<Vacancy> filteredVacancies = filterByExcludeKeywords(
+                byWorkType,
                 request.getExcludeKeywords()
         );
 
@@ -132,6 +136,50 @@ public class VacancySmartService {
             }
         }
 
+        return result;
+    }
+
+    private List<Vacancy> filterByWorkTypes(List<Vacancy> vacancies, List<String> workTypes) {
+        if (vacancies == null || vacancies.isEmpty()) {
+            return vacancies;
+        }
+        if (workTypes == null || workTypes.isEmpty()) {
+            return vacancies;
+        }
+
+        List<String> labels = new ArrayList<>();
+        for (String type : workTypes) {
+            switch (type) {
+                case "remote":
+                    labels.add("удал");
+                    break;
+                case "hybrid":
+                    labels.add("гибрид");
+                    break;
+                case "office":
+                    labels.add("офис");
+                    break;
+            }
+        }
+        if (labels.isEmpty()) {
+            return vacancies;
+        }
+
+        List<Vacancy> result = new ArrayList<>(vacancies.size());
+        for (Vacancy vacancy : vacancies) {
+            String schedule = vacancy.getSchedule();
+            String normalized = schedule == null ? "" : schedule.toLowerCase(Locale.ROOT);
+            boolean matches = false;
+            for (String label : labels) {
+                if (normalized.contains(label)) {
+                    matches = true;
+                    break;
+                }
+            }
+            if (matches) {
+                result.add(vacancy);
+            }
+        }
         return result;
     }
 }
