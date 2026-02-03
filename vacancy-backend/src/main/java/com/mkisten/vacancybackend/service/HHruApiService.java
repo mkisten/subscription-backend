@@ -61,7 +61,7 @@ public class HHruApiService {
             Long telegramId = profile.getTelegramId();
 
             String url = buildSearchUrl(request);
-            log.debug("Searching vacancies with URL: {}", url);
+            log.info("HH.ru search URL: {}", url);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setAccept(List.of(MediaType.APPLICATION_JSON));
@@ -71,11 +71,22 @@ public class HHruApiService {
             ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
 
             if (response.getBody() != null) {
-                List<Map<String, Object>> items = (List<Map<String, Object>>) response.getBody().get("items");
+                Map<String, Object> body = response.getBody();
+                Object foundRaw = body.get("found");
+                Integer found = null;
+                if (foundRaw instanceof Number) {
+                    found = ((Number) foundRaw).intValue();
+                }
+                List<Map<String, Object>> items = (List<Map<String, Object>>) body.get("items");
+                int size = items == null ? -1 : items.size();
+                log.info("HH.ru response: status={}, found={}, items={}",
+                        response.getStatusCode(),
+                        found,
+                        size);
                 if (items == null) {
-                    log.warn("HH.ru response has no items. Status={}, keys={}",
-                            response.getStatusCode(),
-                            response.getBody().keySet());
+                    log.warn("HH.ru response has no items. Keys={}", body.keySet());
+                } else if (items.isEmpty() && found != null && found > 0) {
+                    log.warn("HH.ru returned found={} but empty items array", found);
                 }
                 return convertToVacancies(items, telegramId);
             }
