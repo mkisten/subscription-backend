@@ -139,7 +139,7 @@ public class VacancySmartService {
         return result;
     }
 
-    private List<Vacancy> filterByWorkTypes(List<Vacancy> vacancies, List<String> workTypes) {
+    private List<Vacancy> filterByWorkTypes(List<Vacancy> vacancies, java.util.Set<String> workTypes) {
         if (vacancies == null || vacancies.isEmpty()) {
             return vacancies;
         }
