@@ -90,7 +90,7 @@ public class HHruApiService {
             }
         }
 
-        return builder.toUriString();
+        return builder.build(true).encode(java.nio.charset.StandardCharsets.UTF_8).toUriString();
     }
 
     private List<Vacancy> convertToVacancies(List<Map<String, Object>> items, Long telegramId) {
