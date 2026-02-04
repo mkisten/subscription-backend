@@ -10,6 +10,7 @@ import com.mkisten.subscriptionbackend.service.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.Map;
@@ -24,7 +25,8 @@ class SubscriptionBackendControllerTest {
         JwtUtil jwtUtil = mock(JwtUtil.class);
         UserService userService = mock(UserService.class);
         SubscriptionStatusService statusService = mock(SubscriptionStatusService.class);
-        AuthController controller = new AuthController(jwtUtil, userService, statusService);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        AuthController controller = new AuthController(jwtUtil, userService, statusService, passwordEncoder);
 
         User user = new User();
         user.setTelegramId(1L);
@@ -40,7 +42,8 @@ class SubscriptionBackendControllerTest {
         JwtUtil jwtUtil = mock(JwtUtil.class);
         UserService userService = mock(UserService.class);
         SubscriptionStatusService statusService = mock(SubscriptionStatusService.class);
-        AuthController controller = new AuthController(jwtUtil, userService, statusService);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        AuthController controller = new AuthController(jwtUtil, userService, statusService, passwordEncoder);
 
         when(jwtUtil.refreshToken("old")).thenReturn("new");
 

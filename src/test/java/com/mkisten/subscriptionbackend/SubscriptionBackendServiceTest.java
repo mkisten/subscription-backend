@@ -9,6 +9,7 @@ import com.mkisten.subscriptionbackend.security.JwtUtil;
 import com.mkisten.subscriptionbackend.service.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
@@ -45,8 +46,9 @@ class SubscriptionBackendServiceTest {
     void userServiceCreateUserUsesCalculator() {
         UserRepository userRepository = mock(UserRepository.class);
         SubscriptionCalculator calculator = mock(SubscriptionCalculator.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         when(calculator.calculateSubscriptionActive(any())).thenReturn(true);
-        UserService service = new UserService(userRepository, calculator);
+        UserService service = new UserService(userRepository, calculator, passwordEncoder);
 
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
