@@ -29,6 +29,9 @@ public class UserSettings {
     @Column(name = "exclude_keywords", length = 1000)
     private String excludeKeywords = "";
 
+    @Column(name = "city_id")
+    private String cityId;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(
             name = "user_work_types",

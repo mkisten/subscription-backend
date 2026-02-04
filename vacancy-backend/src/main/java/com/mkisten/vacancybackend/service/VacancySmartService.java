@@ -36,6 +36,8 @@ public class VacancySmartService {
             request.setDays(settings.getDays());
         if (request.getExcludeKeywords() == null || request.getExcludeKeywords().isEmpty())
             request.setExcludeKeywords(settings.getExcludeKeywords());
+        if (!StringUtils.hasText(request.getCityId()))
+            request.setCityId(settings.getCityId());
         if (request.getWorkTypes() == null || request.getWorkTypes().isEmpty())
             request.setWorkTypes(settings.getWorkTypes());
         if (request.getCountries() == null || request.getCountries().isEmpty())
@@ -54,6 +56,7 @@ public class VacancySmartService {
             perQuery.setDays(request.getDays());
             perQuery.setWorkTypes(request.getWorkTypes());
             perQuery.setCountries(request.getCountries());
+            perQuery.setCityId(request.getCityId());
             perQuery.setExcludeKeywords(request.getExcludeKeywords());
             perQuery.setTelegramNotify(request.getTelegramNotify());
 

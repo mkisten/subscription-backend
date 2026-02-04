@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
                                              search_query VARCHAR(255) NOT NULL DEFAULT 'Python разработчик',
     days INTEGER NOT NULL DEFAULT 1,
     exclude_keywords VARCHAR(1000) DEFAULT '',
+    city_id VARCHAR(50),
     telegram_notify BOOLEAN DEFAULT false,
     auto_update_enabled BOOLEAN DEFAULT false,
     auto_update_interval INTEGER DEFAULT 30,

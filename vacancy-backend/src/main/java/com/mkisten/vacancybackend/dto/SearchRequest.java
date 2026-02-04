@@ -10,6 +10,7 @@ public class SearchRequest {
     private Integer days = 1;
     private Set<String> workTypes;
     private Set<String> countries;
+    private String cityId;
     private String excludeKeywords;
     private Boolean telegramNotify = false;
     private Long telegramId;

@@ -75,6 +75,9 @@ public class UserSettingsService {
         if (newSettings.getExcludeKeywords() != null) {
             existingSettings.setExcludeKeywords(newSettings.getExcludeKeywords());
         }
+        if (newSettings.getCityId() != null) {
+            existingSettings.setCityId(newSettings.getCityId());
+        }
         if (newSettings.getWorkTypes() != null) {
             existingSettings.setWorkTypes(newSettings.getWorkTypes());
         }

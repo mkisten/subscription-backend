@@ -153,13 +153,17 @@ public class HHruApiService {
                 .queryParam("only_with_salary", false)
                 .queryParam("search_field", "name");
 
-        // Добавляем фильтры по area (регион)
-        if (request.getCountries() != null && !request.getCountries().isEmpty()) {
-            if (request.getCountries().contains("russia")) {
-                builder.queryParam("area", 113); // Россия
-            }
-            if (request.getCountries().contains("belarus")) {
-                builder.queryParam("area", 16); // Беларусь
+        if (request.getCityId() != null && !request.getCityId().isBlank()) {
+            builder.queryParam("area", request.getCityId());
+        } else {
+            // Добавляем фильтры по area (регион)
+            if (request.getCountries() != null && !request.getCountries().isEmpty()) {
+                if (request.getCountries().contains("russia")) {
+                    builder.queryParam("area", 113); // Россия
+                }
+                if (request.getCountries().contains("belarus")) {
+                    builder.queryParam("area", 16); // Беларусь
+                }
             }
         }
 
