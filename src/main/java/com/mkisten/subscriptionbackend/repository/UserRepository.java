@@ -15,6 +15,8 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByTelegramId(Long telegramId);
     Optional<User> findByEmail(String email);
+    Optional<User> findByLogin(String login);
+    boolean existsByLogin(String login);
     List<User> findBySubscriptionEndDateBefore(LocalDate date);
     List<User> findBySubscriptionEndDateAfter(LocalDate date);
     boolean existsByTelegramId(Long telegramId);

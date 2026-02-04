@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TIMESTAMP,
     last_name VARCHAR(100),
     phone VARCHAR(20),
+    login VARCHAR(64),
+    password_hash VARCHAR(255),
+    password_updated_at TIMESTAMP,
     subscription_end_date TIMESTAMP,
     subscription_plan VARCHAR(50),
     telegram_id BIGINT UNIQUE NOT NULL,
@@ -101,6 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_history_transaction_id ON payment_history
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_users_subscription_end_date ON users(subscription_end_date);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_login ON users(login) WHERE login IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_subscription_active ON users(subscription_active);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;

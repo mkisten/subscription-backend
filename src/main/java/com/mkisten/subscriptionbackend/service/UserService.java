@@ -8,6 +8,7 @@ import com.mkisten.subscriptionbackend.entity.UserRole;
 import com.mkisten.subscriptionbackend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final SubscriptionCalculator subscriptionCalculator;
+    private final PasswordEncoder passwordEncoder;
 
 
     public User findByTelegramId(Long telegramId) {
@@ -34,6 +36,13 @@ public class UserService {
 
     public Optional<User> findByTelegramIdOptional(Long telegramId) {
         return userRepository.findByTelegramId(telegramId);
+    }
+
+    public Optional<User> findByLogin(String login) {
+        if (login == null) {
+            return Optional.empty();
+        }
+        return userRepository.findByLogin(normalizeLogin(login));
     }
 
     public User save(User user) {
@@ -129,6 +138,58 @@ public class UserService {
     public User findByUsername(String username) {
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found: " + username));
+    }
+
+    public boolean isLoginAvailable(String login, Long currentTelegramId) {
+        if (login == null || login.isBlank()) {
+            return false;
+        }
+        String normalized = normalizeLogin(login);
+        Optional<User> existing = userRepository.findByLogin(normalized);
+        if (existing.isEmpty()) {
+            return true;
+        }
+        if (currentTelegramId == null) {
+            return false;
+        }
+        return existing.get().getTelegramId().equals(currentTelegramId);
+    }
+
+    public User updateCredentials(Long telegramId, String login, String rawPassword) {
+        User user = findByTelegramId(telegramId);
+
+        boolean hasLogin = login != null && !login.isBlank();
+        boolean hasPassword = rawPassword != null && !rawPassword.isBlank();
+
+        if (!hasLogin && !hasPassword) {
+            throw new RuntimeException("Login or password must be provided");
+        }
+
+        if (hasLogin) {
+            String normalized = normalizeLogin(login);
+            validateLogin(normalized);
+            if (!isLoginAvailable(normalized, telegramId)) {
+                throw new RuntimeException("Login already in use");
+            }
+            user.setLogin(normalized);
+        }
+
+        if (hasPassword) {
+            validatePassword(rawPassword);
+            user.setPasswordHash(passwordEncoder.encode(rawPassword));
+            user.setPasswordUpdatedAt(LocalDateTime.now());
+        }
+
+        user.setUpdatedAt(LocalDateTime.now());
+        return userRepository.save(user);
+    }
+
+    public User updateLogin(Long telegramId, String login) {
+        return updateCredentials(telegramId, login, null);
+    }
+
+    public User updatePassword(Long telegramId, String rawPassword) {
+        return updateCredentials(telegramId, null, rawPassword);
     }
 
     public User extendSubscription(Long telegramId, int days, SubscriptionPlan plan) {
@@ -300,6 +361,25 @@ public class UserService {
             userRepository.save(user);
         } catch (Exception e) {
             log.error("Error updating last login for user {}", telegramId, e);
+        }
+    }
+
+    private String normalizeLogin(String login) {
+        return login.trim().toLowerCase();
+    }
+
+    private void validateLogin(String login) {
+        if (login.length() < 3 || login.length() > 32) {
+            throw new RuntimeException("Login must be 3-32 characters");
+        }
+        if (!login.matches("^[a-z0-9._-]+$")) {
+            throw new RuntimeException("Login may contain только латинские буквы, цифры, точку, дефис и подчёркивание");
+        }
+    }
+
+    private void validatePassword(String rawPassword) {
+        if (rawPassword.length() < 6 || rawPassword.length() > 128) {
+            throw new RuntimeException("Password must be 6-128 characters");
         }
     }
 }

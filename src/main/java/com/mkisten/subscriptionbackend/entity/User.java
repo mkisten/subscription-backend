@@ -33,6 +33,14 @@ public class User implements UserDetails {
     @Column(unique = true)
     private String phone;
 
+    @Column(unique = true)
+    private String login;
+
+    @Column(name = "password_hash")
+    private String passwordHash;
+
+    private LocalDateTime passwordUpdatedAt;
+
     @Enumerated(EnumType.STRING)
     private SubscriptionPlan subscriptionPlan = SubscriptionPlan.TRIAL;
 
@@ -78,7 +86,7 @@ public class User implements UserDetails {
 
     @Override
     public String getPassword() {
-        return null;
+        return passwordHash;
     }
 
     @Override

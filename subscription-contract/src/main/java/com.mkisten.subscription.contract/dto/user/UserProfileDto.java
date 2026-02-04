@@ -19,6 +19,7 @@ public class UserProfileDto {
     private String username;
     private String email;
     private String phone;
+    private String login;
 
     private LocalDate subscriptionEndDate;
     private SubscriptionPlanDto subscriptionPlan;

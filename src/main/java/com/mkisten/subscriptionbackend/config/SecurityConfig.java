@@ -46,14 +46,17 @@ public class SecurityConfig {
                                 "/swagger-resources/**", "/configuration/**", "/favicon.ico").permitAll()
 
                         // Публичные эндпоинты
-                        .requestMatchers("/api/auth/**", "/api/telegram-auth/**",
-                                 "/api/test/**", "/health/**", "/actuator/**").permitAll()
+                        .requestMatchers("/api/auth/token/**", "/api/auth/login",
+                                "/api/auth/credentials/availability",
+                                "/api/telegram-auth/**",
+                                "/api/test/**", "/health/**", "/actuator/**").permitAll()
 
                         // Admin endpoints - только для админов
                         .requestMatchers("/admin/**").hasRole("ADMIN")
 
                         // User endpoints - для аутентифицированных пользователей
-                        .requestMatchers("/api/auth/me", "/api/bot/**","/api/auth/profile", "/api/subscription/**", "/api/support/**").authenticated()
+                        .requestMatchers("/api/auth/me", "/api/auth/profile", "/api/auth/credentials",
+                                "/api/bot/**", "/api/subscription/**", "/api/support/**").authenticated()
 
                         // Все остальные - требуют аутентификации
                         .anyRequest().authenticated()

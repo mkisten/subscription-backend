@@ -5,6 +5,9 @@ import com.mkisten.subscription.contract.dto.auth.TokenValidationResponseDto;
 import com.mkisten.subscription.contract.dto.subscription.SubscriptionStatusDto;
 import com.mkisten.subscription.contract.dto.user.UserProfileDto;
 import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
+import com.mkisten.subscriptionbackend.dto.CredentialsRequest;
+import com.mkisten.subscriptionbackend.dto.LoginAvailabilityResponse;
+import com.mkisten.subscriptionbackend.dto.LoginRequest;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.security.JwtUtil;
@@ -15,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 @Slf4j
@@ -26,6 +30,7 @@ public class AuthController {
     private final JwtUtil jwtUtil;
     private final UserService userService;
     private final SubscriptionStatusService subscriptionStatusService;
+    private final PasswordEncoder passwordEncoder;
 
     /**
      * Выдать JWT по telegramId.
@@ -43,6 +48,61 @@ public class AuthController {
         userService.updateLastLogin(telegramId);
 
         return ResponseEntity.ok(new TokenResponseDto(token));
+    }
+
+    /**
+     * Вход по логину и паролю.
+     */
+    @PostMapping("/login")
+    public ResponseEntity<TokenResponseDto> login(@RequestBody LoginRequest request) {
+        if (request == null || request.getLogin() == null || request.getPassword() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        User user = userService.findByLogin(request.getLogin()).orElse(null);
+        if (user == null || user.getPasswordHash() == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            return ResponseEntity.status(401).build();
+        }
+
+        String token = jwtUtil.generateToken(user.getTelegramId());
+        userService.updateLastLogin(user.getTelegramId());
+
+        return ResponseEntity.ok(new TokenResponseDto(token));
+    }
+
+    /**
+     * Проверка доступности логина.
+     */
+    @GetMapping("/credentials/availability")
+    public ResponseEntity<LoginAvailabilityResponse> checkLoginAvailability(@RequestParam String login,
+                                                                            @AuthenticationPrincipal UserDetails principal) {
+        Long currentTelegramId = null;
+        if (principal instanceof User user) {
+            currentTelegramId = user.getTelegramId();
+        }
+        boolean available = userService.isLoginAvailable(login, currentTelegramId);
+        String normalized = login == null ? null : login.trim().toLowerCase();
+        return ResponseEntity.ok(new LoginAvailabilityResponse(available, normalized));
+    }
+
+    /**
+     * Установка/обновление логина и/или пароля для текущего пользователя.
+     */
+    @PutMapping("/credentials")
+    public ResponseEntity<UserProfileDto> updateCredentials(@AuthenticationPrincipal UserDetails principal,
+                                                            @RequestBody CredentialsRequest request) {
+        if (!(principal instanceof User user)) {
+            return ResponseEntity.status(401).build();
+        }
+        if (request == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        User updated = userService.updateCredentials(user.getTelegramId(), request.getLogin(), request.getPassword());
+        return ResponseEntity.ok(mapUserToProfileDto(updated));
     }
 
     /**
@@ -135,6 +195,7 @@ public class AuthController {
         dto.setUsername(user.getUsername());
         dto.setEmail(user.getEmail());
         dto.setPhone(user.getPhone());
+        dto.setLogin(user.getLogin());
 
         dto.setSubscriptionEndDate(user.getSubscriptionEndDate());
         dto.setSubscriptionPlan(planDto);

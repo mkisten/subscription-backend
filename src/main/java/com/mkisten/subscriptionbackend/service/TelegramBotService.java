@@ -56,6 +56,8 @@ public class TelegramBotService extends TelegramLongPollingBot {
     private final SupportMessageService supportMessageService;
 
     private final Set<Long> supportWaitingUsers = ConcurrentHashMap.newKeySet();
+    private final Set<Long> loginWaitingUsers = ConcurrentHashMap.newKeySet();
+    private final Set<Long> passwordWaitingUsers = ConcurrentHashMap.newKeySet();
 
     @Getter
     public enum SubscriptionPlanWithPrice {
@@ -130,12 +132,40 @@ public class TelegramBotService extends TelegramLongPollingBot {
             }
         }
 
+        if (loginWaitingUsers.contains(chatId)) {
+            if (text != null && text.startsWith("/")) {
+                if ("/cancel".equals(text)) {
+                    loginWaitingUsers.remove(chatId);
+                    sendTextMessage(chatId, "❌ Установка логина отменена.");
+                    return;
+                }
+            } else {
+                handleLoginUpdate(chatId, text);
+                return;
+            }
+        }
+
+        if (passwordWaitingUsers.contains(chatId)) {
+            if (text != null && text.startsWith("/")) {
+                if ("/cancel".equals(text)) {
+                    passwordWaitingUsers.remove(chatId);
+                    sendTextMessage(chatId, "❌ Установка пароля отменена.");
+                    return;
+                }
+            } else {
+                handlePasswordUpdate(chatId, text);
+                return;
+            }
+        }
+
         if (text.startsWith("/start")) {
             handleStartCommand(chatId, text, telegramUser);
         } else if (text.equals("/register")) {
             handleRegisterCommand(chatId, telegramUser);
         } else if (text.equals("/auth")) {
             handleAuthCommand(chatId, telegramUser);
+        } else if (text.equals("/profile")) {
+            handleProfileCommand(chatId);
         } else if (text.equals("/status")) {
             handleStatusCommand(chatId);
         } else if (text.equals("/help")) {
@@ -773,6 +803,21 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 handlePaymentCancel(chatId, paymentId);
             } else if (data.equals("pay_cancel")) {
                 editMessageText(chatId, messageId, "❌ Выбор тарифа отменен.");
+            } else if (data.equals("profile_login")) {
+                loginWaitingUsers.add(chatId);
+                passwordWaitingUsers.remove(chatId);
+                editMessageText(chatId, messageId,
+                        "Введите логин (латиница, цифры, точка, дефис, подчёркивание). " +
+                                "Для отмены отправьте /cancel");
+            } else if (data.equals("profile_password")) {
+                passwordWaitingUsers.add(chatId);
+                loginWaitingUsers.remove(chatId);
+                editMessageText(chatId, messageId,
+                        "Введите новый пароль (минимум 6 символов). Для отмены отправьте /cancel");
+            } else if (data.equals("profile_cancel")) {
+                loginWaitingUsers.remove(chatId);
+                passwordWaitingUsers.remove(chatId);
+                editMessageText(chatId, messageId, "Изменение профиля отменено.");
             }
 
             AnswerCallbackQuery answer = new AnswerCallbackQuery();
@@ -850,6 +895,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 "`/start` - начать работу с ботом\n" +
                 "`/register` - регистрация в сервисе\n" +
                 "`/auth` - ручная авторизация в приложении\n" +
+                "`/profile` - установить логин/пароль\n" +
                 "`/pay` - оплата подписки\n" +
                 "`/my_payments` - история платежей\n" +
                 "`/status` - статус вашей подписки\n" +
@@ -939,6 +985,65 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 "✅ Сообщение отправлено в поддержку.\n" +
                         "Мы постараемся ответить как можно быстрее."
         );
+    }
+
+    private void handleProfileCommand(Long chatId) {
+        try {
+            userService.findByTelegramId(chatId);
+        } catch (Exception e) {
+            sendTextMessage(chatId,
+                    "❌ **Сначала необходимо зарегистрироваться**\n\n" +
+                            "Отправьте `/register` для регистрации.");
+            return;
+        }
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId.toString());
+        message.setText("👤 **Профиль**\n\nВыберите, что хотите изменить:");
+
+        InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+
+        InlineKeyboardButton loginButton = new InlineKeyboardButton();
+        loginButton.setText("🔑 Установить логин");
+        loginButton.setCallbackData("profile_login");
+
+        InlineKeyboardButton passwordButton = new InlineKeyboardButton();
+        passwordButton.setText("🔐 Установить пароль");
+        passwordButton.setCallbackData("profile_password");
+
+        InlineKeyboardButton cancelButton = new InlineKeyboardButton();
+        cancelButton.setText("❌ Отмена");
+        cancelButton.setCallbackData("profile_cancel");
+
+        rows.add(Arrays.asList(loginButton));
+        rows.add(Arrays.asList(passwordButton));
+        rows.add(Arrays.asList(cancelButton));
+
+        keyboard.setKeyboard(rows);
+        message.setReplyMarkup(keyboard);
+
+        executeMessage(message);
+    }
+
+    private void handleLoginUpdate(Long chatId, String login) {
+        loginWaitingUsers.remove(chatId);
+        try {
+            userService.updateLogin(chatId, login);
+            sendTextMessage(chatId, "✅ Логин установлен.");
+        } catch (Exception e) {
+            sendTextMessage(chatId, "❌ Ошибка: " + e.getMessage());
+        }
+    }
+
+    private void handlePasswordUpdate(Long chatId, String password) {
+        passwordWaitingUsers.remove(chatId);
+        try {
+            userService.updatePassword(chatId, password);
+            sendTextMessage(chatId, "✅ Пароль установлен.");
+        } catch (Exception e) {
+            sendTextMessage(chatId, "❌ Ошибка: " + e.getMessage());
+        }
     }
 
     public void notifyAdminAboutSupport(SupportMessage message, org.telegram.telegrambots.meta.api.objects.User telegramUser) {
