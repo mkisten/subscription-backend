@@ -38,6 +38,9 @@ public class HHruApiService {
     @Value("${app.hhru.timeout:10000}")
     private int timeout;
 
+    @Value("${app.hhru.max-pages:20}")
+    private int maxPages;
+
     // Форматтер для дат HH.ru (поддерживает разные форматы)
     private final DateTimeFormatter hhruDateFormatter = new DateTimeFormatterBuilder()
             .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
@@ -60,48 +63,93 @@ public class HHruApiService {
             ProfileResponse profile = authServiceClient.getCurrentUserProfile(token);
             Long telegramId = profile.getTelegramId();
 
-            java.net.URI uri = buildSearchUri(request);
-            log.info("HH.ru search URL: {}", uri);
+            int days = request.getDays() != null ? request.getDays() : 1;
+            LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
+
+            List<Vacancy> allVacancies = new ArrayList<>();
+            int currentPage = 0;
+            Integer totalPages = null;
 
             HttpHeaders headers = new HttpHeaders();
             headers.setAccept(List.of(MediaType.APPLICATION_JSON));
             headers.set(HttpHeaders.USER_AGENT, "Mozilla/5.0 (compatible; VacancyBot/1.0)");
             HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-            ResponseEntity<Map> response = restTemplate.exchange(uri, HttpMethod.GET, entity, Map.class);
+            while (true) {
+                if (totalPages != null && currentPage >= totalPages) {
+                    break;
+                }
+                if (currentPage >= maxPages) {
+                    log.info("HH.ru pagination stopped at maxPages={}", maxPages);
+                    break;
+                }
 
-            if (response.getBody() != null) {
+                java.net.URI uri = buildSearchUri(request, currentPage);
+                log.info("HH.ru search URL: {}", uri);
+
+                ResponseEntity<Map> response = restTemplate.exchange(uri, HttpMethod.GET, entity, Map.class);
                 Map<String, Object> body = response.getBody();
+                if (body == null) {
+                    log.warn("HH.ru response body is null for page {}", currentPage);
+                    break;
+                }
+
                 Object foundRaw = body.get("found");
                 Integer found = null;
                 if (foundRaw instanceof Number) {
                     found = ((Number) foundRaw).intValue();
                 }
+
+                Object pagesRaw = body.get("pages");
+                if (pagesRaw instanceof Number) {
+                    totalPages = ((Number) pagesRaw).intValue();
+                }
+
                 List<Map<String, Object>> items = (List<Map<String, Object>>) body.get("items");
                 int size = items == null ? -1 : items.size();
-                log.info("HH.ru response: status={}, found={}, items={}",
+                log.info("HH.ru response: status={}, found={}, items={}, page={}, pages={}",
                         response.getStatusCode(),
                         found,
-                        size);
+                        size,
+                        currentPage,
+                        totalPages);
+
                 if (items == null) {
                     log.warn("HH.ru response has no items. Keys={}", body.keySet());
-                } else if (items.isEmpty() && found != null && found > 0) {
-                    log.warn("HH.ru returned found={} but empty items array", found);
+                    break;
                 }
-                return convertToVacancies(items, telegramId);
+                if (items.isEmpty()) {
+                    if (found != null && found > 0) {
+                        log.warn("HH.ru returned found={} but empty items array", found);
+                    }
+                    break;
+                }
+
+                List<Vacancy> pageVacancies = convertToVacancies(items, telegramId, cutoff);
+                allVacancies.addAll(pageVacancies);
+
+                boolean hasFresh = hasVacanciesNewerThan(items, cutoff);
+                if (!hasFresh) {
+                    log.info("HH.ru pagination stopped: page {} is older than cutoff {}", currentPage, cutoff);
+                    break;
+                }
+
+                currentPage += 1;
             }
+
+            return allVacancies;
         } catch (Exception e) {
             log.error("Error searching vacancies on HH.ru: {}", e.getMessage(), e);
         }
         return new ArrayList<>();
     }
 
-    private java.net.URI buildSearchUri(SearchRequest request) {
+    private java.net.URI buildSearchUri(SearchRequest request, int page) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl + "/vacancies")
                 .queryParam("text", request.getQuery())
                 .queryParam("period", request.getDays())
                 .queryParam("per_page", 100)
-                .queryParam("page", 0)
+                .queryParam("page", page)
                 .queryParam("only_with_salary", false)
                 .queryParam("search_field", "name");
 
@@ -118,12 +166,13 @@ public class HHruApiService {
         return builder.build().encode(java.nio.charset.StandardCharsets.UTF_8).toUri();
     }
 
-    private List<Vacancy> convertToVacancies(List<Map<String, Object>> items, Long telegramId) {
+    private List<Vacancy> convertToVacancies(List<Map<String, Object>> items, Long telegramId, LocalDateTime cutoff) {
         List<Vacancy> vacancies = new ArrayList<>();
         if (items == null) return vacancies;
 
         int successCount = 0;
         int errorCount = 0;
+        int skippedCount = 0;
 
         for (Map<String, Object> item : items) {
             try {
@@ -161,6 +210,10 @@ public class HHruApiService {
                 if (publishedAt != null) {
                     try {
                         LocalDateTime publishedDateTime = LocalDateTime.parse(publishedAt, hhruDateFormatter);
+                        if (cutoff != null && publishedDateTime.isBefore(cutoff)) {
+                            skippedCount++;
+                            continue;
+                        }
                         vacancy.setPublishedAt(publishedDateTime);
                     } catch (Exception e) {
                         log.warn("Failed to parse date '{}': {}", publishedAt, e.getMessage());
@@ -182,6 +235,9 @@ public class HHruApiService {
         }
 
         log.info("Successfully converted {}/{} vacancies from HH.ru response", successCount, items.size());
+        if (skippedCount > 0) {
+            log.info("Skipped {} vacancies older than cutoff", skippedCount);
+        }
         if (errorCount > 0) {
             log.warn("Failed to convert {} vacancies due to errors", errorCount);
         }
@@ -206,6 +262,27 @@ public class HHruApiService {
             log.debug("Error formatting salary: {}", e.getMessage());
         }
         return "Не указана";
+    }
+
+    private boolean hasVacanciesNewerThan(List<Map<String, Object>> items, LocalDateTime cutoff) {
+        if (cutoff == null) {
+            return true;
+        }
+        for (Map<String, Object> item : items) {
+            String publishedAt = (String) item.get("published_at");
+            if (publishedAt == null) {
+                continue;
+            }
+            try {
+                LocalDateTime publishedDateTime = LocalDateTime.parse(publishedAt, hhruDateFormatter);
+                if (!publishedDateTime.isBefore(cutoff)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                log.debug("Failed to parse date for freshness check: {}", e.getMessage());
+            }
+        }
+        return false;
     }
 
     private String extractWorkFormatLabel(Map<String, Object> item) {
