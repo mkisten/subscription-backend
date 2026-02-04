@@ -39,6 +39,12 @@ public class UserSettingsService {
                 .orElseGet(() -> createDefaultSettings(telegramId));
     }
 
+    @Transactional(readOnly = true)
+    public UserSettings getSettingsByTelegramId(Long telegramId) {
+        return settingsRepository.findByTelegramId(telegramId)
+                .orElseThrow(() -> new IllegalArgumentException("Settings not found for telegramId " + telegramId));
+    }
+
     /** Проверить подписку (через токен) */
     public boolean isSubscriptionActive(String token) {
         try {

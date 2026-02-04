@@ -1,11 +1,14 @@
 package com.mkisten.vacancybackend.controller;
 
+import com.mkisten.vacancybackend.client.AuthServiceClient;
+import com.mkisten.vacancybackend.dto.ProfileResponse;
 import com.mkisten.vacancybackend.entity.UserSettings;
 import com.mkisten.vacancybackend.service.UserSettingsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,6 +22,7 @@ import java.util.Map;
 public class UserSettingsController {
 
     private final UserSettingsService settingsService;
+    private final AuthServiceClient authServiceClient;
 
     @Operation(summary = "Получить настройки пользователя")
     @GetMapping
@@ -29,6 +33,28 @@ public class UserSettingsController {
             return ResponseEntity.ok(settings);
         } catch (Exception e) {
             log.error("Error getting settings: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @Operation(summary = "Получить настройки пользователя (админ)")
+    @GetMapping("/admin/{telegramId}")
+    public ResponseEntity<UserSettings> getUserSettingsForAdmin(
+            @RequestHeader("Authorization") String authorization,
+            @PathVariable Long telegramId
+    ) {
+        try {
+            String token = authorization.replace("Bearer ", "");
+            ProfileResponse profile = authServiceClient.getCurrentUserProfile(token);
+            if (profile == null || !isAdminRole(profile.getRole())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            UserSettings settings = settingsService.getSettingsByTelegramId(telegramId);
+            return ResponseEntity.ok(settings);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            log.error("Error getting user settings for admin: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -78,5 +104,9 @@ public class UserSettingsController {
                     "message", e.getMessage()
             ));
         }
+    }
+
+    private boolean isAdminRole(String role) {
+        return "ADMIN".equals(role) || "MODERATOR".equals(role);
     }
 }
