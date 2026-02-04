@@ -73,7 +73,8 @@ class VacancyBackendControllerTest {
     @Test
     void userSettingsControllerSetupAutoUpdateMissingFields() {
         UserSettingsService settingsService = mock(UserSettingsService.class);
-        UserSettingsController controller = new UserSettingsController(settingsService);
+        AuthServiceClient authServiceClient = mock(AuthServiceClient.class);
+        UserSettingsController controller = new UserSettingsController(settingsService, authServiceClient);
 
         ResponseEntity<Map<String, String>> response = controller.setupAutoUpdate("Bearer t", Map.of("enabled", true));
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
