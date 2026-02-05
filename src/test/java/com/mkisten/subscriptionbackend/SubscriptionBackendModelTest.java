@@ -52,6 +52,7 @@ class SubscriptionBackendModelTest {
         CreatePaymentRequest createPaymentRequest = new CreatePaymentRequest();
         createPaymentRequest.setPlan(SubscriptionPlan.MONTHLY);
         createPaymentRequest.setMonths(1);
+        createPaymentRequest.setService(ServiceCode.VACANCY);
         assertEquals(SubscriptionPlan.MONTHLY, createPaymentRequest.getPlan());
 
         CancelSubscriptionRequest cancelRequest = new CancelSubscriptionRequest();
@@ -96,7 +97,7 @@ class SubscriptionBackendModelTest {
         message.setContent("hi");
         assertEquals("hi", message.getContent());
 
-        Payment payment = new Payment(1L, 100.0, SubscriptionPlan.TRIAL, 1);
+        Payment payment = new Payment(1L, 100.0, SubscriptionPlan.TRIAL, 1, ServiceCode.VACANCY);
         assertEquals(100.0, payment.getAmount());
 
         PaymentHistory history = new PaymentHistory();

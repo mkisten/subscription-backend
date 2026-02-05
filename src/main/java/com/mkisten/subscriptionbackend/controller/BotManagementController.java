@@ -1,5 +1,6 @@
 package com.mkisten.subscriptionbackend.controller;
 
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.service.TelegramBotService;
 import com.mkisten.subscriptionbackend.service.UserService;
 import com.mkisten.subscriptionbackend.service.BotMessageService;
@@ -32,14 +33,14 @@ public class BotManagementController {
     @GetMapping("/stats")
     public ResponseEntity<?> getBotStats() {
         try {
-            var allUsers = userService.getAllUsers();
-            var activeUsers = userService.getActiveSubscriptions();
+            var allSubscriptions = userService.getAllUserServices(ServiceCode.VACANCY);
+            var activeSubscriptions = userService.getActiveSubscriptions(ServiceCode.VACANCY);
             long totalMessages = botMessageService.getTotalMessages();
             long messagesToday = botMessageService.getMessagesToday();
 
             Map<String, Object> stats = new HashMap<>();
-            stats.put("totalUsers", allUsers.size());
-            stats.put("activeToday", activeUsers.size());
+            stats.put("totalUsers", allSubscriptions.size());
+            stats.put("activeToday", activeSubscriptions.size());
             stats.put("totalMessages", totalMessages);
             stats.put("messagesToday", messagesToday);
             stats.put("botStatus", "online");
@@ -67,12 +68,13 @@ public class BotManagementController {
                 ));
             }
 
-            var allUsers = userService.getAllUsers();
+            var allSubscriptions = userService.getAllUserServices(ServiceCode.VACANCY);
             int successCount = 0;
             int failCount = 0;
 
             // Отправляем сообщения асинхронно
-            for (var user : allUsers) {
+            for (var subscription : allSubscriptions) {
+                var user = subscription.getUser();
                 try {
                     telegramBotService.sendTextMessageToUser(user.getTelegramId(), message);
                     successCount++;
@@ -87,7 +89,7 @@ public class BotManagementController {
 
             Map<String, Object> result = new HashMap<>();
             result.put("message", "Broadcast completed");
-            result.put("totalUsers", allUsers.size());
+            result.put("totalUsers", allSubscriptions.size());
             result.put("successCount", successCount);
             result.put("failCount", failCount);
             result.put("sentAt", LocalDateTime.now());
@@ -185,23 +187,24 @@ public class BotManagementController {
     @GetMapping(value = "/export-users", produces = "text/csv")
     public ResponseEntity<?> exportUsers() {
         try {
-            var users = userService.getAllUsers();
+            var subscriptions = userService.getAllUserServices(ServiceCode.VACANCY);
 
             // Генерируем CSV
             StringBuilder csv = new StringBuilder();
             csv.append("Telegram ID,First Name,Last Name,Username,Email,Phone,Subscription End,Plan,Status,Days Remaining,Role,Created At\n");
 
-            for (var user : users) {
+            for (var subscription : subscriptions) {
+                var user = subscription.getUser();
                 csv.append(user.getTelegramId()).append(",");
                 csv.append(escapeCsv(user.getFirstName())).append(",");
                 csv.append(escapeCsv(user.getLastName())).append(",");
                 csv.append(escapeCsv(user.getUsername())).append(",");
                 csv.append(escapeCsv(user.getEmail())).append(",");
                 csv.append(escapeCsv(user.getPhone())).append(",");
-                csv.append(user.getSubscriptionEndDate()).append(",");
-                csv.append(user.getSubscriptionPlan()).append(",");
-                csv.append(userService.isSubscriptionActive(user) ? "ACTIVE" : "INACTIVE").append(",");
-                csv.append(userService.getDaysRemaining(user)).append(",");
+                csv.append(subscription.getSubscriptionEndDate()).append(",");
+                csv.append(subscription.getSubscriptionPlan()).append(",");
+                csv.append(subscription.isActive() ? "ACTIVE" : "INACTIVE").append(",");
+                csv.append(userService.getDaysRemaining(subscription)).append(",");
                 csv.append(user.getRole()).append(",");
                 csv.append(user.getCreatedAt()).append("\n");
             }
@@ -226,31 +229,31 @@ public class BotManagementController {
     @GetMapping("/detailed-stats")
     public ResponseEntity<?> getDetailedStats() {
         try {
-            var allUsers = userService.getAllUsers();
-            var activeUsers = userService.getActiveSubscriptions();
-            var expiredUsers = userService.getExpiredSubscriptions();
+            var allSubscriptions = userService.getAllUserServices(ServiceCode.VACANCY);
+            var activeSubscriptions = userService.getActiveSubscriptions(ServiceCode.VACANCY);
+            var expiredSubscriptions = userService.getExpiredSubscriptions(ServiceCode.VACANCY);
 
             Map<String, Object> stats = new HashMap<>();
 
             // Основная статистика
-            stats.put("totalUsers", allUsers.size());
-            stats.put("activeSubscriptions", activeUsers.size());
-            stats.put("expiredSubscriptions", expiredUsers.size());
+            stats.put("totalUsers", allSubscriptions.size());
+            stats.put("activeSubscriptions", activeSubscriptions.size());
+            stats.put("expiredSubscriptions", expiredSubscriptions.size());
             stats.put("totalMessages", botMessageService.getTotalMessages());
             stats.put("messagesToday", botMessageService.getMessagesToday());
 
             // Статистика по планам
             Map<String, Long> planStats = new HashMap<>();
-            for (var user : allUsers) {
-                String plan = user.getSubscriptionPlan().name();
+            for (var subscription : allSubscriptions) {
+                String plan = subscription.getSubscriptionPlan().name();
                 planStats.put(plan, planStats.getOrDefault(plan, 0L) + 1);
             }
             stats.put("planDistribution", planStats);
 
             // Статистика по ролям
             Map<String, Long> roleStats = new HashMap<>();
-            for (var user : allUsers) {
-                String role = user.getRole().name();
+            for (var subscription : allSubscriptions) {
+                String role = subscription.getUser().getRole().name();
                 roleStats.put(role, roleStats.getOrDefault(role, 0L) + 1);
             }
             stats.put("roleDistribution", roleStats);

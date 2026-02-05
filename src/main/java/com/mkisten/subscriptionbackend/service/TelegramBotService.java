@@ -2,6 +2,7 @@ package com.mkisten.subscriptionbackend.service;
 
 import com.mkisten.subscriptionbackend.entity.AuthSession;
 import com.mkisten.subscriptionbackend.entity.User;
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.Payment;
 import com.mkisten.subscriptionbackend.entity.SupportMessage;
@@ -483,6 +484,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
             AuthSession authSession = authSessionService.createAuthSession("manual_auth");
             String jwtToken = jwtUtil.generateToken(user.getTelegramId());
             authSessionService.completeAuthSession(authSession.getSessionId(), chatId, jwtToken);
+            var subscription = userService.getOrCreateService(user, ServiceCode.VACANCY);
 
             sendTextMessage(chatId,
                     "🔐 **Ручная авторизация**\n\n" +
@@ -491,8 +493,8 @@ public class TelegramBotService extends TelegramLongPollingBot {
                             "📟 **Device ID:** `manual_auth`\n" +
                             "🔑 **Token:** `" + jwtToken + "`\n\n" +
                             "👤 **Пользователь:** " + formatUserName(user) + "\n" +
-                            "💎 **Тариф:** " + user.getSubscriptionPlan().getDescription() + "\n" +
-                            "📅 **Подписка до:** " + user.getSubscriptionEndDate() + "\n\n" +
+                            "💎 **Тариф:** " + subscription.getSubscriptionPlan().getDescription() + "\n" +
+                            "📅 **Подписка до:** " + subscription.getSubscriptionEndDate() + "\n\n" +
                             "⚠️ *Сообщите эти данные в службу поддержки для завершения авторизации.*"
             );
 
@@ -610,20 +612,21 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 return;
             }
 
-            boolean isSubscriptionActive = telegramAuthService.isSubscriptionActive(user);
-            String planLabel = user.getSubscriptionPlan() != null
-                    ? user.getSubscriptionPlan().getDescription()
+            var subscription = userService.getOrCreateService(user, ServiceCode.VACANCY);
+            boolean isSubscriptionActive = telegramAuthService.isSubscriptionActive(subscription);
+            String planLabel = subscription.getSubscriptionPlan() != null
+                    ? subscription.getSubscriptionPlan().getDescription()
                     : "Не указан";
             String subscriptionInfo = isSubscriptionActive
                     ? "✅ **Авторизация прошла успешно!**\n\n"
                     + "👤 **Имя:** " + formatUserName(user) + "\n"
                     + "💎 **Тариф:** " + planLabel + "\n"
-                    + "📅 **Подписка до:** " + user.getSubscriptionEndDate() + "\n"
-                    + "⏱ **Осталось дней:** " + telegramAuthService.getDaysRemaining(user) + "\n\n"
+                    + "📅 **Подписка до:** " + subscription.getSubscriptionEndDate() + "\n"
+                    + "⏱ **Осталось дней:** " + telegramAuthService.getDaysRemaining(subscription) + "\n\n"
                     + "🔐 **Вы можете вернуться в приложение.**\n"
                     + "Авторизация произойдет автоматически."
                     : "⚠️ **Подписка не активна**\n\n"
-                    + "Ваша подписка истекла " + user.getSubscriptionEndDate() + "\n"
+                    + "Ваша подписка истекла " + subscription.getSubscriptionEndDate() + "\n"
                     + "Для продления подписки отправьте `/pay`\n\n"
                     + "🔐 **Вы можете вернуться в приложение.**\n"
                     + "Авторизация произойдет автоматически.";
@@ -718,14 +721,14 @@ public class TelegramBotService extends TelegramLongPollingBot {
     private void completeRegistration(Long chatId, org.telegram.telegrambots.meta.api.objects.User telegramUser) {
         try {
             User user = createUser(chatId, telegramUser);
-            userService.save(user);
+            var subscription = userService.getOrCreateService(user, ServiceCode.VACANCY);
 
             sendTextMessage(chatId,
                     "🎉 **Регистрация завершена!**\n\n" +
                             "✅ Вы успешно зарегистрированы в сервисе\n\n" +
-                            "📅 **Бесплатный период до:** " + user.getSubscriptionEndDate() + "\n" +
+                            "📅 **Бесплатный период до:** " + subscription.getSubscriptionEndDate() + "\n" +
                             "⏱ **Осталось дней:** 7\n" +
-                            "💎 **Тариф:** " + user.getSubscriptionPlan().getDescription() + "\n\n" +
+                            "💎 **Тариф:** " + subscription.getSubscriptionPlan().getDescription() + "\n\n" +
                             "🔐 **Для авторизации в приложении:**\n" +
                             "• Вернитесь в приложение и нажмите 'Проверить авторизацию'\n" +
                             "• Или отправьте `/auth` в этом чате для ручной авторизации"
@@ -744,7 +747,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
             log.info("Starting registration with auth - Session: {}, Device: {}, Chat: {}", sessionId, deviceId, chatId);
 
             User user = createUser(chatId, telegramUser);
-            userService.save(user);
+            var subscription = userService.getOrCreateService(user, ServiceCode.VACANCY);
 
             String jwtToken = jwtUtil.generateToken(user.getTelegramId());
             AuthSession completedSession = authSessionService.completeAuthSession(sessionId, deviceId, chatId, jwtToken);
@@ -753,7 +756,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
                     "🎉 **Регистрация и авторизация завершены!**\n\n" +
                             "✅ Вы успешно зарегистрированы\n" +
                             "📅 **Бесплатный период:** 7 дней\n" +
-                            "💎 **Тариф:** " + user.getSubscriptionPlan().getDescription() + "\n\n" +
+                            "💎 **Тариф:** " + subscription.getSubscriptionPlan().getDescription() + "\n\n" +
                             "🔐 **Вы можете вернуться в приложение.**\n" +
                             "Авторизация произойдет автоматически."
             );
@@ -767,17 +770,12 @@ public class TelegramBotService extends TelegramLongPollingBot {
     }
 
     private User createUser(Long chatId, org.telegram.telegrambots.meta.api.objects.User telegramUser) {
-        User user = new User();
-        user.setTelegramId(chatId);
-        user.setFirstName(telegramUser.getFirstName());
-        user.setLastName(telegramUser.getLastName());
-        user.setUsername(telegramUser.getUserName());
-        user.setSubscriptionPlan(SubscriptionPlan.TRIAL);
-        user.setTrialUsed(true);
-        user.setSubscriptionEndDate(LocalDate.now().plusDays(7));
-        user.setCreatedAt(LocalDateTime.now());
-        user.setLastLoginAt(LocalDateTime.now());
-        return user;
+        return userService.createUser(
+                chatId,
+                telegramUser.getFirstName(),
+                telegramUser.getLastName(),
+                telegramUser.getUserName()
+        );
     }
 
     private void handleCallbackQuery(CallbackQuery callbackQuery) {
@@ -861,18 +859,19 @@ public class TelegramBotService extends TelegramLongPollingBot {
     }
 
     private void sendSubscriptionInfo(Long chatId, User user) {
-        boolean isActive = telegramAuthService.isSubscriptionActive(user);
-        int daysRemaining = telegramAuthService.getDaysRemaining(user);
+        var subscription = userService.getOrCreateService(user, ServiceCode.VACANCY);
+        boolean isActive = telegramAuthService.isSubscriptionActive(subscription);
+        int daysRemaining = telegramAuthService.getDaysRemaining(subscription);
 
         String status = isActive ? "✅ Активна" : "❌ Неактивна";
         String daysText = isActive ? "⏱ Осталось дней: " + daysRemaining : "⏱ Подписка истекла";
 
         String message = "📊 **Ваша подписка:**\n\n" +
                 "👤 **Пользователь:** " + formatUserName(user) + "\n" +
-                "📅 **Окончание:** " + user.getSubscriptionEndDate() + "\n" +
+                "📅 **Окончание:** " + subscription.getSubscriptionEndDate() + "\n" +
                 daysText + "\n" +
                 "💎 **Статус:** " + status + "\n" +
-                "🏷 **Тариф:** " + user.getSubscriptionPlan().getDescription() + "\n\n" +
+                "🏷 **Тариф:** " + subscription.getSubscriptionPlan().getDescription() + "\n\n" +
                 "💳 Для продления отправьте `/pay`";
 
         sendTextMessage(chatId, message);
@@ -930,8 +929,8 @@ public class TelegramBotService extends TelegramLongPollingBot {
     private void sendAdminPanel(Long chatId) {
         try {
             long totalUsers = userService.getAllUsers().size();
-            long activeSubscriptions = userService.getActiveSubscriptions().size();
-            long expiredSubscriptions = userService.getExpiredSubscriptions().size();
+            long activeSubscriptions = userService.getActiveSubscriptions(ServiceCode.VACANCY).size();
+            long expiredSubscriptions = userService.getExpiredSubscriptions(ServiceCode.VACANCY).size();
 
             String stats = "👑 **Админ-панель**\n\n" +
                     "📊 **Статистика:**\n" +
@@ -1090,7 +1089,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
     private void activateSubscription(Long chatId, SubscriptionPlan plan) {
         try {
             User user = userService.findByTelegramId(chatId);
-            userService.extendSubscription(chatId, plan.getDays(), plan);
+            userService.extendSubscription(chatId, plan.getDays(), plan, ServiceCode.VACANCY);
             sendTextMessage(chatId, "✅ Подписка активирована: " + plan.getDescription());
         } catch (Exception e) {
             sendTextMessage(chatId, "❌ Ошибка активации подписки.");
@@ -1157,7 +1156,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
             User user = userService.findByTelegramId(chatId);
 
             // Создаем платеж через репозиторий напрямую
-            Payment payment = new Payment(chatId, plan.getPrice(), plan.toSubscriptionPlan(), plan.getMonths());
+            Payment payment = new Payment(chatId, plan.getPrice(), plan.toSubscriptionPlan(), plan.getMonths(), ServiceCode.VACANCY);
             Payment savedPayment = paymentRepository.save(payment);
 
             sendPaymentInstructions(chatId, savedPayment.getId(), plan);

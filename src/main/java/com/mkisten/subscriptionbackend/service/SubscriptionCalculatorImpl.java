@@ -1,6 +1,6 @@
 package com.mkisten.subscriptionbackend.service;
 
-import com.mkisten.subscriptionbackend.entity.User;
+import com.mkisten.subscriptionbackend.entity.UserServiceSubscription;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -11,14 +11,14 @@ import java.time.temporal.ChronoUnit;
 @Component
 public class SubscriptionCalculatorImpl implements SubscriptionCalculator {
     @Override
-    public boolean calculateSubscriptionActive(User user) {
-        if (user == null || user.getSubscriptionEndDate() == null) {
+    public boolean calculateSubscriptionActive(UserServiceSubscription subscription) {
+        if (subscription == null || subscription.getSubscriptionEndDate() == null) {
             return false;
         }
         LocalDate today = LocalDate.now();
-        LocalDate endDate = user.getSubscriptionEndDate();
+        LocalDate endDate = subscription.getSubscriptionEndDate();
         log.info("=== Расчет статуса подписки ===");
-        log.info("Telegram ID: {}", user.getTelegramId());
+        log.info("Subscription ID: {}", subscription.getId());
         log.info("Сегодня: {}", today);
         log.info("Дата окончания: {}", endDate);
         log.info("today.isAfter(endDate): {}", today.isAfter(endDate));
@@ -29,12 +29,12 @@ public class SubscriptionCalculatorImpl implements SubscriptionCalculator {
         return today.isBefore(endDate) || today.isEqual(endDate);
     }
     @Override
-    public int getDaysRemaining(User user) {
-        if (user == null || !calculateSubscriptionActive(user)) {
+    public int getDaysRemaining(UserServiceSubscription subscription) {
+        if (subscription == null || !calculateSubscriptionActive(subscription)) {
             return 0;
         }
         LocalDate today = LocalDate.now();
-        LocalDate endDate = user.getSubscriptionEndDate();
+        LocalDate endDate = subscription.getSubscriptionEndDate();
         long daysBetween = ChronoUnit.DAYS.between(today, endDate);
         return Math.max(0, (int) daysBetween);
     }

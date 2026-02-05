@@ -30,10 +30,11 @@ class SubscriptionBackendControllerTest {
 
         User user = new User();
         user.setTelegramId(1L);
-        when(userService.findByTelegramId(1L)).thenReturn(user);
+        when(userService.findByTelegramIdOptional(1L)).thenReturn(java.util.Optional.of(user));
+        when(userService.getOrCreateService(user, ServiceCode.VACANCY)).thenReturn(new UserServiceSubscription());
         when(jwtUtil.generateToken(1L)).thenReturn("t");
 
-        ResponseEntity<?> response = controller.getToken(1L);
+        ResponseEntity<?> response = controller.getToken(1L, ServiceCode.VACANCY);
         assertEquals("t", ((com.mkisten.subscription.contract.dto.auth.TokenResponseDto) response.getBody()).getToken());
     }
 
@@ -61,11 +62,15 @@ class SubscriptionBackendControllerTest {
         User user = new User();
         user.setTelegramId(1L);
         user.setRole(UserRole.USER);
-        user.setSubscriptionPlan(SubscriptionPlan.TRIAL);
-        when(telegramAuthService.isSubscriptionActive(user)).thenReturn(true);
-        when(telegramAuthService.getDaysRemaining(user)).thenReturn(3);
+        UserServiceSubscription subscription = new UserServiceSubscription();
+        subscription.setUser(user);
+        subscription.setServiceCode(ServiceCode.VACANCY);
+        subscription.setSubscriptionPlan(SubscriptionPlan.TRIAL);
+        when(userService.getOrCreateService(user, ServiceCode.VACANCY)).thenReturn(subscription);
+        when(telegramAuthService.isSubscriptionActive(subscription)).thenReturn(true);
+        when(telegramAuthService.getDaysRemaining(subscription)).thenReturn(3);
 
-        ResponseEntity<?> response = controller.getSubscriptionStatus(user);
+        ResponseEntity<?> response = controller.getSubscriptionStatus(user, ServiceCode.VACANCY);
         com.mkisten.subscription.contract.dto.subscription.SubscriptionStatusDto dto =
                 (com.mkisten.subscription.contract.dto.subscription.SubscriptionStatusDto) response.getBody();
         assertTrue(dto.getActive());
@@ -119,8 +124,11 @@ class SubscriptionBackendControllerTest {
         BotMessageService botMessageService = mock(BotMessageService.class);
         BotManagementController controller = new BotManagementController(telegramBotService, userService, botMessageService);
 
-        when(userService.getAllUsers()).thenReturn(List.of(new User()));
-        when(userService.getActiveSubscriptions()).thenReturn(List.of());
+        UserServiceSubscription subscription = new UserServiceSubscription();
+        subscription.setUser(new User());
+        subscription.setServiceCode(ServiceCode.VACANCY);
+        when(userService.getAllUserServices(ServiceCode.VACANCY)).thenReturn(List.of(subscription));
+        when(userService.getActiveSubscriptions(ServiceCode.VACANCY)).thenReturn(List.of());
         when(botMessageService.getTotalMessages()).thenReturn(5L);
         when(botMessageService.getMessagesToday()).thenReturn(2L);
 
@@ -142,13 +150,14 @@ class SubscriptionBackendControllerTest {
         user.setTelegramId(1L);
         when(userService.findByUsername("user")).thenReturn(user);
 
-        Payment payment = new Payment(1L, 100.0, SubscriptionPlan.TRIAL, 1);
+        Payment payment = new Payment(1L, 100.0, SubscriptionPlan.TRIAL, 1, ServiceCode.VACANCY);
         payment.setId(10L);
-        when(paymentService.createPayment(1L, SubscriptionPlan.TRIAL, 1)).thenReturn(payment);
+        when(paymentService.createPayment(1L, SubscriptionPlan.TRIAL, 1, ServiceCode.VACANCY)).thenReturn(payment);
 
         CreatePaymentRequestDto req = new CreatePaymentRequestDto();
         req.setPlan(SubscriptionPlanDto.TRIAL);
         req.setMonths(1);
+        req.setService(com.mkisten.subscription.contract.enums.ServiceCodeDto.VACANCY);
 
         ResponseEntity<PaymentResponseDto> response = controller.createPayment(req, auth);
         assertNotNull(response.getBody());
@@ -175,13 +184,16 @@ class SubscriptionBackendControllerTest {
         User user = new User();
         user.setTelegramId(1L);
         user.setRole(UserRole.USER);
-        user.setSubscriptionPlan(SubscriptionPlan.TRIAL);
+        UserServiceSubscription subscription = new UserServiceSubscription();
+        subscription.setUser(user);
+        subscription.setServiceCode(ServiceCode.VACANCY);
+        subscription.setSubscriptionPlan(SubscriptionPlan.TRIAL);
 
-        when(userService.getAllUsers()).thenReturn(List.of(user));
-        when(telegramAuthService.isSubscriptionActive(user)).thenReturn(true);
-        when(telegramAuthService.getDaysRemaining(user)).thenReturn(3);
+        when(userService.getAllUserServices(ServiceCode.VACANCY)).thenReturn(List.of(subscription));
+        when(telegramAuthService.isSubscriptionActive(subscription)).thenReturn(true);
+        when(telegramAuthService.getDaysRemaining(subscription)).thenReturn(3);
 
-        ResponseEntity<?> response = controller.getAllUsers();
+        ResponseEntity<?> response = controller.getAllUsers(ServiceCode.VACANCY);
         assertEquals(200, response.getStatusCode().value());
     }
 }

@@ -2,10 +2,13 @@ package com.mkisten.subscriptionbackend.service;
 
 import com.mkisten.subscriptionbackend.controller.AdminController;
 import com.mkisten.subscriptionbackend.controller.AuthController;
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.entity.UserRole;
+import com.mkisten.subscriptionbackend.entity.UserServiceSubscription;
 import com.mkisten.subscriptionbackend.repository.UserRepository;
+import com.mkisten.subscriptionbackend.repository.UserServiceSubscriptionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,10 +27,12 @@ import java.util.Optional;
 @Transactional
 public class UserService {
 
+    private static final int DEFAULT_TRIAL_DAYS = 7;
+
     private final UserRepository userRepository;
+    private final UserServiceSubscriptionRepository userServiceRepository;
     private final SubscriptionCalculator subscriptionCalculator;
     private final PasswordEncoder passwordEncoder;
-
 
     public User findByTelegramId(Long telegramId) {
         return userRepository.findByTelegramId(telegramId)
@@ -51,9 +56,6 @@ public class UserService {
         return savedUser;
     }
 
-    /**
-     * Удаляет пользователя по Telegram ID
-     */
     @Transactional
     public void deleteUser(Long telegramId) {
         User user = findByTelegramId(telegramId);
@@ -61,14 +63,10 @@ public class UserService {
         log.info("User deleted: {}", telegramId);
     }
 
-    /**
-     * Обновляет профиль пользователя с проверкой уникальности email
-     */
     @Transactional
     public User updateUserProfile(Long telegramId, AdminController.UpdateUserRequest request) {
         User user = findByTelegramId(telegramId);
 
-        // Проверяем уникальность email, если он изменяется
         if (request.email() != null && !request.email().isBlank() && !request.email().equals(user.getEmail())) {
             Optional<User> existingUserWithEmail = userRepository.findByEmail(request.email());
             if (existingUserWithEmail.isPresent() && !existingUserWithEmail.get().getTelegramId().equals(telegramId)) {
@@ -76,7 +74,6 @@ public class UserService {
             }
         }
 
-        // Проверяем уникальность username, если он изменяется
         if (request.username() != null && !request.username().equals(user.getUsername())) {
             Optional<User> existingUserWithUsername = userRepository.findByUsername(request.username());
             if (existingUserWithUsername.isPresent() && !existingUserWithUsername.get().getTelegramId().equals(telegramId)) {
@@ -99,19 +96,27 @@ public class UserService {
         if (request.phone() != null) {
             user.setPhone(request.phone());
         }
-        if (request.subscriptionPlan() != null) {
-            user.setSubscriptionPlan(request.subscriptionPlan());
-        }
-        if (request.subscriptionDays() != null) {
-            user.setSubscriptionEndDate(LocalDate.now().plusDays(request.subscriptionDays()));
-        } else if (request.subscriptionPlan() == SubscriptionPlan.LIFETIME) {
-            user.setSubscriptionEndDate(LocalDate.now().plusDays(36500));
-        }
 
-        user.setActive(subscriptionCalculator.calculateSubscriptionActive(user));
+        if (request.subscriptionPlan() != null || request.subscriptionDays() != null) {
+            ServiceCode serviceCode = request.service() != null ? request.service() : ServiceCode.VACANCY;
+            UserServiceSubscription subscription = getOrCreateService(user, serviceCode);
+
+            if (request.subscriptionPlan() != null) {
+                subscription.setSubscriptionPlan(request.subscriptionPlan());
+                if (request.subscriptionPlan() == SubscriptionPlan.LIFETIME) {
+                    subscription.setSubscriptionEndDate(LocalDate.now().plusDays(36500));
+                }
+            }
+            if (request.subscriptionDays() != null) {
+                subscription.setSubscriptionEndDate(LocalDate.now().plusDays(request.subscriptionDays()));
+            }
+
+            boolean isActive = subscriptionCalculator.calculateSubscriptionActive(subscription);
+            subscription.setActive(isActive);
+            userServiceRepository.save(subscription);
+        }
 
         user.setUpdatedAt(LocalDateTime.now());
-
         User savedUser = userRepository.save(user);
         log.info("User profile updated: {}", telegramId);
         return savedUser;
@@ -123,14 +128,10 @@ public class UserService {
         user.setFirstName(firstName);
         user.setLastName(lastName);
         user.setUsername(username);
-        user.setSubscriptionPlan(SubscriptionPlan.TRIAL);
-        user.setSubscriptionEndDate(LocalDate.now().plusDays(7));
-        user.setTrialUsed(false);
-
-        boolean isActive = subscriptionCalculator.calculateSubscriptionActive(user);
-        user.setActive(isActive);
 
         User savedUser = userRepository.save(user);
+        ensureTrialSubscription(savedUser, ServiceCode.VACANCY);
+
         log.info("Created new user: {} {} (ID: {})", firstName, lastName, telegramId);
         return savedUser;
     }
@@ -192,45 +193,44 @@ public class UserService {
         return updateCredentials(telegramId, null, rawPassword);
     }
 
-    public User extendSubscription(Long telegramId, int days, SubscriptionPlan plan) {
+    public UserServiceSubscription extendSubscription(Long telegramId, int days, SubscriptionPlan plan, ServiceCode serviceCode) {
         User user = findByTelegramId(telegramId);
-        LocalDate newEndDate = calculateNewEndDate(user, days);
-        user.setSubscriptionEndDate(newEndDate);
-        user.setSubscriptionPlan(plan);
+        UserServiceSubscription subscription = getOrCreateService(user, serviceCode);
 
-        boolean isActive = subscriptionCalculator.calculateSubscriptionActive(user);
-        user.setActive(isActive);
+        LocalDate newEndDate = calculateNewEndDate(subscription, days);
+        subscription.setSubscriptionEndDate(newEndDate);
+        subscription.setSubscriptionPlan(plan);
+        subscription.setTrialUsed(true);
 
-        User savedUser = userRepository.save(user);
-        log.info("Extended subscription for user {}: +{} days, plan: {}, new end date: {}, active: {}",
-                telegramId, days, plan, newEndDate, isActive);
-        return savedUser;
+        boolean isActive = subscriptionCalculator.calculateSubscriptionActive(subscription);
+        subscription.setActive(isActive);
+
+        UserServiceSubscription saved = userServiceRepository.save(subscription);
+        log.info("Extended subscription for user {}: +{} days, plan: {}, service: {}, new end date: {}, active: {}",
+                telegramId, days, plan, serviceCode, newEndDate, isActive);
+        return saved;
     }
 
-    /**
-     * Проверяет активна ли подписка пользователя
-     */
-    public boolean isSubscriptionActive(User user) {
-        if (user == null) {
-            log.warn("User is null in isSubscriptionActive check");
+    public UserServiceSubscription extendSubscription(Long telegramId, int days, SubscriptionPlan plan) {
+        return extendSubscription(telegramId, days, plan, ServiceCode.VACANCY);
+    }
+
+    public boolean isSubscriptionActive(UserServiceSubscription subscription) {
+        if (subscription == null) {
             return false;
         }
-        boolean calculatedActive = subscriptionCalculator.calculateSubscriptionActive(user);
-        log.debug("Subscription status for user {}: calculated={}, endDate={}, today={}",
-                user.getTelegramId(), calculatedActive,
-                user.getSubscriptionEndDate(), LocalDate.now());
+        boolean calculatedActive = subscriptionCalculator.calculateSubscriptionActive(subscription);
+        log.debug("Subscription status for user {} service {}: calculated={}, endDate={}, today={}",
+                subscription.getUser().getTelegramId(), subscription.getServiceCode(), calculatedActive,
+                subscription.getSubscriptionEndDate(), LocalDate.now());
         return calculatedActive;
     }
 
-    /**
-     * Получает количество оставшихся дней подписки
-     */
-    public int getDaysRemaining(User user) {
-        if (user == null || user.getSubscriptionEndDate() == null) {
+    public int getDaysRemaining(UserServiceSubscription subscription) {
+        if (subscription == null || subscription.getSubscriptionEndDate() == null) {
             return 0;
         }
-
-        LocalDate endDate = user.getSubscriptionEndDate();
+        LocalDate endDate = subscription.getSubscriptionEndDate();
         LocalDate today = LocalDate.now();
 
         if (today.isAfter(endDate)) {
@@ -241,53 +241,47 @@ public class UserService {
         return Math.max(0, (int) daysRemaining);
     }
 
-
-    private LocalDate calculateNewEndDate(User user, int days) {
-        LocalDate currentEndDate = user.getSubscriptionEndDate();
+    private LocalDate calculateNewEndDate(UserServiceSubscription subscription, int days) {
+        LocalDate currentEndDate = subscription.getSubscriptionEndDate();
         LocalDate today = LocalDate.now();
 
-        // Если текущая подписка еще активна, продлеваем от конца
         if (currentEndDate != null && !today.isAfter(currentEndDate)) {
             return currentEndDate.plusDays(days);
         } else {
-            // Иначе начинаем с сегодняшнего дня
             return today.plusDays(days);
         }
     }
 
-    /**
-     * Обновляет флаг активности подписки
-     */
-    public void updateSubscriptionActiveFlag(Long telegramId, boolean isActive) {
-        try {
-            User user = findByTelegramId(telegramId);
-            if (user.isActive() != isActive) {
-                user.setActive(isActive);
-                userRepository.save(user);
-                log.debug("Updated subscription active flag for user {}: {}", telegramId, isActive);
-            }
-        } catch (Exception e) {
-            log.error("Error updating subscription active flag for user {}", telegramId, e);
-        }
-    }
-
-    public User cancelSubscription(Long telegramId) {
+    public UserServiceSubscription cancelSubscription(Long telegramId, ServiceCode serviceCode) {
         User user = findByTelegramId(telegramId);
-        user.setSubscriptionEndDate(LocalDate.now().minusDays(1));
-        user.setActive(false);
-        return userRepository.save(user);
+        UserServiceSubscription subscription = getOrCreateService(user, serviceCode);
+        subscription.setSubscriptionEndDate(LocalDate.now().minusDays(1));
+        subscription.setActive(false);
+        return userServiceRepository.save(subscription);
     }
 
-    public List<User> getExpiredSubscriptions() {
-        return userRepository.findBySubscriptionEndDateBefore(LocalDate.now());
+    public UserServiceSubscription cancelSubscription(Long telegramId) {
+        return cancelSubscription(telegramId, ServiceCode.VACANCY);
     }
 
-    public List<User> getActiveSubscriptions() {
-        return userRepository.findBySubscriptionEndDateAfter(LocalDate.now());
+    public List<UserServiceSubscription> getExpiredSubscriptions(ServiceCode serviceCode) {
+        return userServiceRepository.findByServiceCodeAndSubscriptionEndDateBefore(serviceCode, LocalDate.now());
+    }
+
+    public List<UserServiceSubscription> getActiveSubscriptions(ServiceCode serviceCode) {
+        return userServiceRepository.findByServiceCodeAndSubscriptionEndDateAfter(serviceCode, LocalDate.now());
     }
 
     public List<User> getAllUsers() {
         return userRepository.findAll();
+    }
+
+    public List<UserServiceSubscription> getAllUserServices(ServiceCode serviceCode) {
+        return userServiceRepository.findByServiceCode(serviceCode);
+    }
+
+    public List<UserServiceSubscription> getAllUserServices() {
+        return userServiceRepository.findAll();
     }
 
     public List<User> searchUsers(String query) {
@@ -351,9 +345,6 @@ public class UserService {
         return userRepository.findByRole(role);
     }
 
-    /**
-     * Обновляет время последнего входа
-     */
     public void updateLastLogin(Long telegramId) {
         try {
             User user = findByTelegramId(telegramId);
@@ -362,6 +353,52 @@ public class UserService {
         } catch (Exception e) {
             log.error("Error updating last login for user {}", telegramId, e);
         }
+    }
+
+    public void updateServiceLastLogin(Long telegramId, ServiceCode serviceCode) {
+        try {
+            User user = findByTelegramId(telegramId);
+            UserServiceSubscription subscription = getOrCreateService(user, serviceCode);
+            subscription.setLastLoginAt(LocalDateTime.now());
+            userServiceRepository.save(subscription);
+        } catch (Exception e) {
+            log.error("Error updating service login for user {} service {}", telegramId, serviceCode, e);
+        }
+    }
+
+    public UserServiceSubscription getOrCreateService(User user, ServiceCode serviceCode) {
+        return userServiceRepository.findByUserAndServiceCode(user, serviceCode)
+                .orElseGet(() -> createServiceSubscription(user, serviceCode));
+    }
+
+    public UserServiceSubscription createServiceSubscription(User user, ServiceCode serviceCode) {
+        UserServiceSubscription subscription = new UserServiceSubscription();
+        subscription.setUser(user);
+        subscription.setServiceCode(serviceCode);
+        subscription.setSubscriptionPlan(SubscriptionPlan.TRIAL);
+        subscription.setSubscriptionEndDate(LocalDate.now().plusDays(DEFAULT_TRIAL_DAYS));
+        subscription.setTrialUsed(true);
+        subscription.setActive(subscriptionCalculator.calculateSubscriptionActive(subscription));
+        return userServiceRepository.save(subscription);
+    }
+
+    public UserServiceSubscription ensureTrialSubscription(User user, ServiceCode serviceCode) {
+        UserServiceSubscription subscription = getOrCreateService(user, serviceCode);
+        if (subscription.getSubscriptionEndDate() == null) {
+            subscription.setSubscriptionEndDate(LocalDate.now().plusDays(DEFAULT_TRIAL_DAYS));
+        }
+        subscription.setSubscriptionPlan(SubscriptionPlan.TRIAL);
+        subscription.setTrialUsed(true);
+        subscription.setActive(subscriptionCalculator.calculateSubscriptionActive(subscription));
+        return userServiceRepository.save(subscription);
+    }
+
+    public Optional<UserServiceSubscription> findUserService(User user, ServiceCode serviceCode) {
+        return userServiceRepository.findByUserAndServiceCode(user, serviceCode);
+    }
+
+    public List<UserServiceSubscription> getUserServices(User user) {
+        return userServiceRepository.findByUser(user);
     }
 
     private String normalizeLogin(String login) {

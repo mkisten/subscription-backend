@@ -5,12 +5,14 @@ import com.mkisten.subscriptionbackend.repository.AuthSessionRepository;
 import com.mkisten.subscriptionbackend.repository.BotMessageRepository;
 import com.mkisten.subscriptionbackend.repository.PaymentRepository;
 import com.mkisten.subscriptionbackend.repository.UserRepository;
+import com.mkisten.subscriptionbackend.repository.UserServiceSubscriptionRepository;
 import com.mkisten.subscriptionbackend.security.JwtUtil;
 import com.mkisten.subscriptionbackend.service.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -26,10 +28,13 @@ class SubscriptionBackendServiceTest {
         SubscriptionCalculatorImpl calculator = new SubscriptionCalculatorImpl();
         User user = new User();
         user.setTelegramId(1L);
-        user.setSubscriptionEndDate(LocalDate.now());
+        UserServiceSubscription subscription = new UserServiceSubscription();
+        subscription.setUser(user);
+        subscription.setServiceCode(ServiceCode.VACANCY);
+        subscription.setSubscriptionEndDate(LocalDate.now());
 
-        assertTrue(calculator.calculateSubscriptionActive(user));
-        assertTrue(calculator.getDaysRemaining(user) >= 0);
+        assertTrue(calculator.calculateSubscriptionActive(subscription));
+        assertTrue(calculator.getDaysRemaining(subscription) >= 0);
     }
 
     @Test
@@ -45,36 +50,46 @@ class SubscriptionBackendServiceTest {
     @Test
     void userServiceCreateUserUsesCalculator() {
         UserRepository userRepository = mock(UserRepository.class);
+        UserServiceSubscriptionRepository userServiceRepository = mock(UserServiceSubscriptionRepository.class);
         SubscriptionCalculator calculator = mock(SubscriptionCalculator.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         when(calculator.calculateSubscriptionActive(any())).thenReturn(true);
-        UserService service = new UserService(userRepository, calculator, passwordEncoder);
+        UserService service = new UserService(userRepository, userServiceRepository, calculator, passwordEncoder);
 
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userServiceRepository.findByUserAndServiceCode(any(User.class), any()))
+                .thenReturn(Optional.empty());
+        when(userServiceRepository.save(any(UserServiceSubscription.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         User user = service.createUser(1L, "First", "Last", "user");
         assertEquals(SubscriptionPlan.TRIAL, user.getSubscriptionPlan());
-        assertTrue(user.isActive());
+
+        ArgumentCaptor<UserServiceSubscription> captor = ArgumentCaptor.forClass(UserServiceSubscription.class);
+        verify(userServiceRepository, times(2)).save(captor.capture());
+        UserServiceSubscription lastSaved = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertTrue(lastSaved.isActive());
+        assertEquals(SubscriptionPlan.TRIAL, lastSaved.getSubscriptionPlan());
     }
 
     @Test
     void subscriptionStatusServiceUpdatesUserStatus() {
         UserService userService = mock(UserService.class);
-        UserRepository userRepository = mock(UserRepository.class);
         TelegramAuthService telegramAuthService = mock(TelegramAuthService.class);
-        SubscriptionStatusService statusService = new SubscriptionStatusService(userService, userRepository, telegramAuthService);
+        SubscriptionStatusService statusService = new SubscriptionStatusService(userService, telegramAuthService);
 
         User user = new User();
         user.setTelegramId(1L);
-        user.setActive(false);
+        UserServiceSubscription subscription = new UserServiceSubscription();
+        subscription.setUser(user);
+        subscription.setServiceCode(ServiceCode.VACANCY);
+        subscription.setActive(false);
 
-        when(userService.findByTelegramId(1L)).thenReturn(user);
-        when(telegramAuthService.calculateSubscriptionActive(user)).thenReturn(true);
+        when(telegramAuthService.calculateSubscriptionActive(subscription)).thenReturn(true);
 
-        statusService.updateUserSubscriptionStatus(1L);
+        statusService.updateUserSubscriptionStatus(subscription);
 
-        verify(userRepository).save(user);
-        assertTrue(user.isActive());
+        assertTrue(subscription.isActive());
     }
 
     @Test
@@ -96,7 +111,7 @@ class SubscriptionBackendServiceTest {
 
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Payment payment = service.createPayment(1L, SubscriptionPlan.MONTHLY, 2);
+        Payment payment = service.createPayment(1L, SubscriptionPlan.MONTHLY, 2, ServiceCode.VACANCY);
         assertEquals(598.0, payment.getAmount());
         assertEquals(Payment.PaymentStatus.PENDING, payment.getStatus());
     }
@@ -108,7 +123,7 @@ class SubscriptionBackendServiceTest {
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
         PaymentService service = new PaymentService(paymentRepository, userService, publisher);
 
-        Payment payment = new Payment(1L, 100.0, SubscriptionPlan.MONTHLY, 1);
+        Payment payment = new Payment(1L, 100.0, SubscriptionPlan.MONTHLY, 1, ServiceCode.VACANCY);
         payment.setId(5L);
 
         when(paymentRepository.findById(5L)).thenReturn(Optional.of(payment));

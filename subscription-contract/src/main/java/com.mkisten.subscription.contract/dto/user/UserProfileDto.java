@@ -1,5 +1,6 @@
 package com.mkisten.subscription.contract.dto.user;
 
+import com.mkisten.subscription.contract.enums.ServiceCodeDto;
 import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
 import lombok.Data;
 
@@ -23,6 +24,7 @@ public class UserProfileDto {
 
     private LocalDate subscriptionEndDate;
     private SubscriptionPlanDto subscriptionPlan;
+    private ServiceCodeDto serviceCode;
 
     // именно isActive – чтобы JSON остался совместимым с тем,
     // что у тебя уже есть (поле isActive).

@@ -2,6 +2,7 @@ package com.mkisten.subscriptionbackend.service;
 
 import com.mkisten.subscriptionbackend.controller.AdminPaymentController;
 import com.mkisten.subscriptionbackend.entity.Payment;
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.event.PaymentNotificationEvent;
@@ -35,11 +36,15 @@ public class PaymentService {
     private static final double YEARLY_PRICE = 2990.0;
     private static final double LIFETIME_PRICE = 9990.0;
 
-    public Payment createPayment(Long telegramId, SubscriptionPlan plan, Integer months) {
+    public Payment createPayment(Long telegramId, SubscriptionPlan plan, Integer months, ServiceCode serviceCode) {
         double amount = calculateAmount(plan, months);
 
-        Payment payment = new Payment(telegramId, amount, plan, months);
+        Payment payment = new Payment(telegramId, amount, plan, months, serviceCode);
         return paymentRepository.save(payment);
+    }
+
+    public Payment createPayment(Long telegramId, SubscriptionPlan plan, Integer months) {
+        return createPayment(telegramId, plan, months, ServiceCode.VACANCY);
     }
 
     // Получение всех платежей с фильтрацией по статусу
@@ -93,7 +98,8 @@ public class PaymentService {
 
         // Продлеваем подписку пользователя
         User user = userService.findByTelegramId(payment.getTelegramId());
-        userService.extendSubscription(user.getTelegramId(), payment.getMonths() * 30, payment.getPlan());
+        ServiceCode serviceCode = payment.getServiceCode() != null ? payment.getServiceCode() : ServiceCode.VACANCY;
+        userService.extendSubscription(user.getTelegramId(), payment.getMonths() * 30, payment.getPlan(), serviceCode);
 
         // Обновляем статус платежа
         payment.setStatus(Payment.PaymentStatus.VERIFIED);

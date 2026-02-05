@@ -4,12 +4,15 @@ import com.mkisten.subscription.contract.dto.auth.TokenResponseDto;
 import com.mkisten.subscription.contract.dto.auth.TokenValidationResponseDto;
 import com.mkisten.subscription.contract.dto.subscription.SubscriptionStatusDto;
 import com.mkisten.subscription.contract.dto.user.UserProfileDto;
+import com.mkisten.subscription.contract.enums.ServiceCodeDto;
 import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
 import com.mkisten.subscriptionbackend.dto.CredentialsRequest;
 import com.mkisten.subscriptionbackend.dto.LoginAvailabilityResponse;
 import com.mkisten.subscriptionbackend.dto.LoginRequest;
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
+import com.mkisten.subscriptionbackend.entity.UserServiceSubscription;
 import com.mkisten.subscriptionbackend.security.JwtUtil;
 import com.mkisten.subscriptionbackend.service.SubscriptionStatusService;
 import com.mkisten.subscriptionbackend.service.UserService;
@@ -37,15 +40,19 @@ public class AuthController {
      * Используется vacancy‑сервисом.
      */
     @GetMapping("/token")
-    public ResponseEntity<TokenResponseDto> getToken(@RequestParam Long telegramId) {
+    public ResponseEntity<TokenResponseDto> getToken(@RequestParam Long telegramId,
+                                                     @RequestParam(required = false) ServiceCode service) {
         User user = userService.findByTelegramIdOptional(telegramId).orElse(null);
         if (user == null) {
             return ResponseEntity.notFound().build();
         }
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        userService.getOrCreateService(user, serviceCode);
         String token = jwtUtil.generateToken(user.getTelegramId());
 
         // Обновляем время последнего входа
         userService.updateLastLogin(telegramId);
+        userService.updateServiceLastLogin(telegramId, serviceCode);
 
         return ResponseEntity.ok(new TokenResponseDto(token));
     }
@@ -54,7 +61,8 @@ public class AuthController {
      * Вход по логину и паролю.
      */
     @PostMapping("/login")
-    public ResponseEntity<TokenResponseDto> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<TokenResponseDto> login(@RequestBody LoginRequest request,
+                                                  @RequestParam(required = false) ServiceCode service) {
         if (request == null || request.getLogin() == null || request.getPassword() == null) {
             return ResponseEntity.badRequest().build();
         }
@@ -68,8 +76,11 @@ public class AuthController {
             return ResponseEntity.status(401).build();
         }
 
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        userService.getOrCreateService(user, serviceCode);
         String token = jwtUtil.generateToken(user.getTelegramId());
         userService.updateLastLogin(user.getTelegramId());
+        userService.updateServiceLastLogin(user.getTelegramId(), serviceCode);
 
         return ResponseEntity.ok(new TokenResponseDto(token));
     }
@@ -94,7 +105,8 @@ public class AuthController {
      */
     @PutMapping("/credentials")
     public ResponseEntity<UserProfileDto> updateCredentials(@AuthenticationPrincipal UserDetails principal,
-                                                            @RequestBody CredentialsRequest request) {
+                                                            @RequestBody CredentialsRequest request,
+                                                            @RequestParam(required = false) ServiceCode service) {
         if (!(principal instanceof User user)) {
             return ResponseEntity.status(401).build();
         }
@@ -102,7 +114,9 @@ public class AuthController {
             return ResponseEntity.badRequest().build();
         }
         User updated = userService.updateCredentials(user.getTelegramId(), request.getLogin(), request.getPassword());
-        return ResponseEntity.ok(mapUserToProfileDto(updated));
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        UserServiceSubscription subscription = userService.getOrCreateService(updated, serviceCode);
+        return ResponseEntity.ok(mapUserToProfileDto(updated, subscription));
     }
 
     /**
@@ -114,7 +128,7 @@ public class AuthController {
         if (request == null || request.telegramId() == null) {
             return ResponseEntity.badRequest().build();
         }
-        return getToken(request.telegramId());
+        return getToken(request.telegramId(), request.service());
     }
 
     /**
@@ -138,12 +152,15 @@ public class AuthController {
      */
     @GetMapping("/me")
     public ResponseEntity<UserProfileDto> getCurrentUser(
-            @AuthenticationPrincipal UserDetails principal
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestParam(required = false) ServiceCode service
     ) {
         String username = principal.getUsername();
         User user = userService.findByUsername(username);
 
-        UserProfileDto dto = mapUserToProfileDto(user);
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
+        UserProfileDto dto = mapUserToProfileDto(user, subscription);
         return ResponseEntity.ok(dto);
     }
 
@@ -159,7 +176,8 @@ public class AuthController {
         User user = userService.findByUsername(username);
 
         User updated = userService.updateUserProfile(user.getTelegramId(), request);
-        return ResponseEntity.ok(mapUserToProfileDto(updated));
+        UserServiceSubscription subscription = userService.getOrCreateService(updated, ServiceCode.VACANCY);
+        return ResponseEntity.ok(mapUserToProfileDto(updated, subscription));
     }
 
     /**
@@ -179,13 +197,13 @@ public class AuthController {
 
     // --- private mapping helpers ---
 
-    private UserProfileDto mapUserToProfileDto(User user) {
-        boolean isActive = userService.isSubscriptionActive(user);
-        int daysRemaining = userService.getDaysRemaining(user);
+    private UserProfileDto mapUserToProfileDto(User user, UserServiceSubscription subscription) {
+        boolean isActive = userService.isSubscriptionActive(subscription);
+        int daysRemaining = userService.getDaysRemaining(subscription);
 
         SubscriptionPlanDto planDto = null;
-        if (user.getSubscriptionPlan() != null) {
-            planDto = SubscriptionPlanDto.valueOf(user.getSubscriptionPlan().name());
+        if (subscription.getSubscriptionPlan() != null) {
+            planDto = SubscriptionPlanDto.valueOf(subscription.getSubscriptionPlan().name());
         }
 
         UserProfileDto dto = new UserProfileDto();
@@ -197,11 +215,12 @@ public class AuthController {
         dto.setPhone(user.getPhone());
         dto.setLogin(user.getLogin());
 
-        dto.setSubscriptionEndDate(user.getSubscriptionEndDate());
+        dto.setSubscriptionEndDate(subscription.getSubscriptionEndDate());
         dto.setSubscriptionPlan(planDto);
         dto.setIsActive(isActive);
         dto.setDaysRemaining(daysRemaining);
-        dto.setTrialUsed(user.getTrialUsed());
+        dto.setTrialUsed(subscription.getTrialUsed());
+        dto.setServiceCode(ServiceCodeDto.valueOf(subscription.getServiceCode().name()));
 
         dto.setRole(user.getRole() != null ? user.getRole().name() : null);
         dto.setCreatedAt(user.getCreatedAt());
@@ -216,21 +235,24 @@ public class AuthController {
      */
     @GetMapping("/subscription/status")
     public ResponseEntity<SubscriptionStatusDto> getSubscriptionStatus(
-            @AuthenticationPrincipal UserDetails principal
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestParam(required = false) ServiceCode service
     ) {
         String username = principal.getUsername();
         User user = userService.findByUsername(username);
-        SubscriptionStatusDto dto = mapUserToSubscriptionStatusDto(user);
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
+        SubscriptionStatusDto dto = mapUserToSubscriptionStatusDto(user, subscription);
         return ResponseEntity.ok(dto);
     }
 
-    private SubscriptionStatusDto mapUserToSubscriptionStatusDto(User user) {
-        boolean isActive = userService.isSubscriptionActive(user);
-        long daysRemaining = userService.getDaysRemaining(user);
+    private SubscriptionStatusDto mapUserToSubscriptionStatusDto(User user, UserServiceSubscription subscription) {
+        boolean isActive = userService.isSubscriptionActive(subscription);
+        long daysRemaining = userService.getDaysRemaining(subscription);
 
         SubscriptionPlanDto planDto = null;
-        if (user.getSubscriptionPlan() != null) {
-            planDto = SubscriptionPlanDto.valueOf(user.getSubscriptionPlan().name());
+        if (subscription.getSubscriptionPlan() != null) {
+            planDto = SubscriptionPlanDto.valueOf(subscription.getSubscriptionPlan().name());
         }
 
         SubscriptionStatusDto dto = new SubscriptionStatusDto();
@@ -239,17 +261,18 @@ public class AuthController {
         dto.setLastName(user.getLastName());
         dto.setUsername(user.getUsername());
         dto.setEmail(user.getEmail());
-        dto.setSubscriptionEndDate(user.getSubscriptionEndDate());
+        dto.setSubscriptionEndDate(subscription.getSubscriptionEndDate());
         dto.setSubscriptionPlan(planDto);
         dto.setActive(isActive);
         dto.setDaysRemaining((long) daysRemaining);
-        dto.setTrialUsed(user.getTrialUsed());
+        dto.setTrialUsed(subscription.getTrialUsed());
         dto.setRole(user.getRole() != null ? user.getRole().name() : null);
+        dto.setServiceCode(ServiceCodeDto.valueOf(subscription.getServiceCode().name()));
 
         return dto;
     }
 
-    public record TokenRequest(Long telegramId) {}
+    public record TokenRequest(Long telegramId, ServiceCode service) {}
 
     public record ProfileUpdateRequest(
             String firstName,

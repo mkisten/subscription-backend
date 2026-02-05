@@ -1,5 +1,6 @@
 package com.mkisten.subscription.contract.dto.subscription;
 
+import com.mkisten.subscription.contract.enums.ServiceCodeDto;
 import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
 import lombok.Data;
 
@@ -19,6 +20,7 @@ public class SubscriptionStatusDto {
 
     private LocalDate subscriptionEndDate;
     private SubscriptionPlanDto subscriptionPlan;
+    private ServiceCodeDto serviceCode;
 
     private Boolean active;
     private Long daysRemaining;

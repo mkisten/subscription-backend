@@ -1,8 +1,8 @@
 package com.mkisten.subscriptionbackend.service;
 
-import com.mkisten.subscriptionbackend.entity.User;
+import com.mkisten.subscriptionbackend.entity.UserServiceSubscription;
 
 public interface SubscriptionCalculator {
-    boolean calculateSubscriptionActive(User user);
-    int getDaysRemaining(User user);
+    boolean calculateSubscriptionActive(UserServiceSubscription subscription);
+    int getDaysRemaining(UserServiceSubscription subscription);
 }

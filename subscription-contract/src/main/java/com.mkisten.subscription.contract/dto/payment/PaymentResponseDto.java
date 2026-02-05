@@ -1,5 +1,6 @@
 package com.mkisten.subscription.contract.dto.payment;
 
+import com.mkisten.subscription.contract.enums.ServiceCodeDto;
 import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
 import lombok.Data;
 
@@ -17,6 +18,7 @@ public class PaymentResponseDto {
     private Double amount;
     private SubscriptionPlanDto plan;
     private Integer months;
+    private ServiceCodeDto service;
 
     /**
      * Статус из Payment.PaymentStatus.name()

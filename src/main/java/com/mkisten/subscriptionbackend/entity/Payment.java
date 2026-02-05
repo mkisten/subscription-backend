@@ -27,6 +27,10 @@ public class Payment {
     @Column(name = "plan", nullable = false)
     private SubscriptionPlan plan;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "service_code", nullable = false)
+    private ServiceCode serviceCode = ServiceCode.VACANCY;
+
     @Column(name = "months", nullable = false)
     private Integer months;
 
@@ -53,10 +57,11 @@ public class Payment {
         EXPIRED     // Время на оплату истекло
     }
 
-    public Payment(Long telegramId, Double amount, SubscriptionPlan plan, Integer months) {
+    public Payment(Long telegramId, Double amount, SubscriptionPlan plan, Integer months, ServiceCode serviceCode) {
         this.telegramId = telegramId;
         this.amount = amount;
         this.plan = plan;
+        this.serviceCode = serviceCode;
         this.months = months;
         this.status = PaymentStatus.PENDING;
         this.phoneNumber = "+79779104605"; // Ваш номер Т-Банк

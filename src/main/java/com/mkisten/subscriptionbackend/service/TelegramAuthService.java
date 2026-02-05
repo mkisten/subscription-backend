@@ -1,6 +1,6 @@
 package com.mkisten.subscriptionbackend.service;
 
-import com.mkisten.subscriptionbackend.entity.User;
+import com.mkisten.subscriptionbackend.entity.UserServiceSubscription;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -28,27 +27,27 @@ public class TelegramAuthService {
 
     private final SubscriptionCalculator subscriptionCalculator;
 
-    public boolean isSubscriptionActive(User user) {
-        if (user == null) {
-            log.warn("User is null in isSubscriptionActive check");
+    public boolean isSubscriptionActive(UserServiceSubscription subscription) {
+        if (subscription == null) {
+            log.warn("Subscription is null in isSubscriptionActive check");
             return false;
         }
-        boolean calculatedActive = subscriptionCalculator.calculateSubscriptionActive(user);
-        log.debug("Subscription status for user {}: calculated={}, endDate={}, today={}",
-                user.getTelegramId(), calculatedActive,
-                user.getSubscriptionEndDate(), LocalDate.now());
+        boolean calculatedActive = subscriptionCalculator.calculateSubscriptionActive(subscription);
+        log.debug("Subscription status for user {} service {}: calculated={}, endDate={}, today={}",
+                subscription.getUser().getTelegramId(), subscription.getServiceCode(), calculatedActive,
+                subscription.getSubscriptionEndDate(), LocalDate.now());
         return calculatedActive;
     }
 
-    public boolean calculateSubscriptionActive(User user) {
-        return subscriptionCalculator.calculateSubscriptionActive(user);
+    public boolean calculateSubscriptionActive(UserServiceSubscription subscription) {
+        return subscriptionCalculator.calculateSubscriptionActive(subscription);
     }
 
-    public int getDaysRemaining(User user) {
-        return subscriptionCalculator.getDaysRemaining(user);
+    public int getDaysRemaining(UserServiceSubscription subscription) {
+        return subscriptionCalculator.getDaysRemaining(subscription);
     }
 
-       /**
+    /**
      * Проверяет валидность данных авторизации Telegram Web App
      */
     public boolean validateTelegramInitData(String initData) {

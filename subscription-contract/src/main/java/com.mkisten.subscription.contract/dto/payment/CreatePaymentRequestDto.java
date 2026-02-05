@@ -1,5 +1,6 @@
 package com.mkisten.subscription.contract.dto.payment;
 
+import com.mkisten.subscription.contract.enums.ServiceCodeDto;
 import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
 import lombok.Data;
 
@@ -10,4 +11,5 @@ import lombok.Data;
 public class CreatePaymentRequestDto {
     private SubscriptionPlanDto plan;
     private Integer months;
+    private ServiceCodeDto service;
 }

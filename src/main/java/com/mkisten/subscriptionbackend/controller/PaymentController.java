@@ -1,5 +1,6 @@
 package com.mkisten.subscriptionbackend.controller;
 
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscription.contract.dto.payment.CreatePaymentRequestDto;
 import com.mkisten.subscription.contract.dto.payment.PaymentResponseDto;
@@ -34,10 +35,15 @@ public class PaymentController {
                 ? SubscriptionPlan.valueOf(request.getPlan().name())
                 : SubscriptionPlan.TRIAL;
 
+        ServiceCode serviceCode = request.getService() != null
+                ? ServiceCode.valueOf(request.getService().name())
+                : ServiceCode.VACANCY;
+
         Payment payment = paymentService.createPayment(
                 user.getTelegramId(),
                 plan,
-                request.getMonths()
+                request.getMonths(),
+                serviceCode
         );
 
         PaymentResponseDto dto = mapPayment(payment);
@@ -50,6 +56,7 @@ public class PaymentController {
         dto.setTelegramId(payment.getTelegramId());
         dto.setAmount(payment.getAmount());
         dto.setPlan(com.mkisten.subscription.contract.enums.SubscriptionPlanDto.valueOf(payment.getPlan().name()));
+        dto.setService(com.mkisten.subscription.contract.enums.ServiceCodeDto.valueOf(payment.getServiceCode().name()));
         dto.setMonths(payment.getMonths());
         dto.setStatus(payment.getStatus().name());
         dto.setPhoneNumber(payment.getPhoneNumber());

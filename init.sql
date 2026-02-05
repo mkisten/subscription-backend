@@ -43,6 +43,27 @@ CREATE TABLE IF NOT EXISTS users (
     subscription_active BOOLEAN NOT NULL DEFAULT FALSE
     );
 
+-- Таблица user_services (подписки по сервисам)
+CREATE TABLE IF NOT EXISTS user_services (
+                                             id BIGSERIAL PRIMARY KEY,
+                                             user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                                             service_code VARCHAR(32) NOT NULL,
+    subscription_plan VARCHAR(50),
+    subscription_end_date TIMESTAMP,
+    trial_used BOOLEAN NOT NULL DEFAULT FALSE,
+    subscription_active BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, service_code)
+    );
+
+-- Бэкофис: перенос существующих подписок в VACANCY
+INSERT INTO user_services (user_id, service_code, subscription_plan, subscription_end_date, trial_used, subscription_active, created_at, last_login_at, updated_at)
+SELECT u.id, 'VACANCY', u.subscription_plan, u.subscription_end_date, u.trial_used, u.subscription_active, u.created_at, u.last_login_at, u.updated_at
+FROM users u
+ON CONFLICT (user_id, service_code) DO NOTHING;
+
 -- Таблица messages (сообщения)
 CREATE TABLE IF NOT EXISTS messages (
                                         id BIGSERIAL PRIMARY KEY,
@@ -76,6 +97,7 @@ CREATE TABLE IF NOT EXISTS payments (
     months INTEGER NOT NULL,
     phone_number VARCHAR(20),
     plan VARCHAR(50),
+    service_code VARCHAR(32) NOT NULL DEFAULT 'VACANCY',
     status VARCHAR(20) NOT NULL,
     telegram_id BIGINT NOT NULL,
     verified_at TIMESTAMP
@@ -109,6 +131,11 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_subscription_active ON users(subscription_active);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
 
+-- Индексы для таблицы user_services
+CREATE INDEX IF NOT EXISTS idx_user_services_user_id ON user_services(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_services_service ON user_services(service_code);
+CREATE INDEX IF NOT EXISTS idx_user_services_end_date ON user_services(subscription_end_date);
+
 -- Индексы для таблицы messages
 CREATE INDEX IF NOT EXISTS idx_messages_telegram_id ON messages(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
@@ -128,6 +155,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_telegram_id ON payments(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 CREATE INDEX IF NOT EXISTS idx_payments_created_at ON payments(created_at);
 CREATE INDEX IF NOT EXISTS idx_payments_verified_at ON payments(verified_at);
+CREATE INDEX IF NOT EXISTS idx_payments_service_code ON payments(service_code);
 
 -- Индексы для таблицы support_messages
 CREATE INDEX IF NOT EXISTS idx_support_messages_telegram_id ON support_messages(telegram_id);
@@ -196,6 +224,11 @@ CREATE TRIGGER update_users_updated_at
 
 CREATE TRIGGER update_auth_sessions_updated_at
     BEFORE UPDATE ON auth_sessions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_user_services_updated_at
+    BEFORE UPDATE ON user_services
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

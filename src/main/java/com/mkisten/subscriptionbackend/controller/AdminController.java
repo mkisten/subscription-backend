@@ -1,8 +1,10 @@
 package com.mkisten.subscriptionbackend.controller;
 
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
 import com.mkisten.subscriptionbackend.entity.UserRole;
+import com.mkisten.subscriptionbackend.entity.UserServiceSubscription;
 import com.mkisten.subscriptionbackend.service.PaymentService;
 import com.mkisten.subscriptionbackend.service.TelegramAuthService;
 import com.mkisten.subscriptionbackend.service.UserService;
@@ -24,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 @RestController
@@ -46,10 +49,12 @@ public class AdminController {
             description = "Возвращает список всех зарегистрированных пользователей"
     )
     @GetMapping("/all-users")
-    public ResponseEntity<?> getAllUsers() {
+    public ResponseEntity<?> getAllUsers(@RequestParam(required = false) ServiceCode service) {
         try {
-            List<User> allUsers = userService.getAllUsers();
-            List<AdminUserResponse> responses = allUsers.stream()
+            List<UserServiceSubscription> subscriptions = service != null
+                    ? userService.getAllUserServices(service)
+                    : userService.getAllUserServices();
+            List<AdminUserResponse> responses = subscriptions.stream()
                     .map(this::convertToAdminUserResponse)
                     .collect(Collectors.toList());
 
@@ -70,10 +75,14 @@ public class AdminController {
     @GetMapping("/user/{telegramId}")
     public ResponseEntity<?> getUserInfo(
             @Parameter(description = "Telegram ID пользователя", required = true)
-            @PathVariable Long telegramId) {
+            @PathVariable Long telegramId,
+            @RequestParam(required = false) ServiceCode service) {
         try {
             User user = userService.findByTelegramId(telegramId);
-            return ResponseEntity.ok(convertToAdminUserResponse(user));
+            ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+            UserServiceSubscription subscription = userService.findUserService(user, serviceCode)
+                    .orElseThrow(() -> new RuntimeException("SERVICE_NOT_FOUND"));
+            return ResponseEntity.ok(convertToAdminUserResponse(subscription));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(
                     new ErrorResponse("USER_NOT_FOUND", "User not found with Telegram ID: " + telegramId)
@@ -88,11 +97,20 @@ public class AdminController {
     @GetMapping("/search")
     public ResponseEntity<?> searchUsers(
             @Parameter(description = "Поисковый запрос", required = true)
-            @RequestParam String query) {
+            @RequestParam String query,
+            @RequestParam(required = false) ServiceCode service) {
         try {
             List<User> users = userService.searchUsers(query);
             List<AdminUserResponse> responses = users.stream()
-                    .map(this::convertToAdminUserResponse)
+                    .flatMap(user -> {
+                        if (service != null) {
+                            return userService.findUserService(user, service)
+                                    .map(subscription -> Stream.of(convertToAdminUserResponse(subscription)))
+                                    .orElseGet(Stream::empty);
+                        }
+                        return userService.getUserServices(user).stream()
+                                .map(this::convertToAdminUserResponse);
+                    })
                     .collect(Collectors.toList());
 
             return ResponseEntity.ok(new UserListResponse(responses, responses.size()));
@@ -125,11 +143,14 @@ public class AdminController {
 
     @Operation(summary = "Получить всех администраторов")
     @GetMapping("/admins")
-    public ResponseEntity<?> getAllAdmins() {
+    public ResponseEntity<?> getAllAdmins(@RequestParam(required = false) ServiceCode service) {
         try {
             var admins = userService.findByRole(UserRole.ADMIN);
+            ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
             List<AdminUserResponse> responses = admins.stream()
-                    .map(this::convertToAdminUserResponse)
+                    .flatMap(user -> userService.findUserService(user, serviceCode)
+                            .map(subscription -> Stream.of(convertToAdminUserResponse(subscription)))
+                            .orElseGet(Stream::empty))
                     .collect(Collectors.toList());
 
             return ResponseEntity.ok(new UserListResponse(responses, responses.size()));
@@ -158,13 +179,15 @@ public class AdminController {
             @Parameter(description = "Данные для продления подписки", required = true)
             @RequestBody ExtendSubscriptionRequest request) {
         try {
-            User user = userService.extendSubscription(
+            ServiceCode serviceCode = request.service() != null ? request.service() : ServiceCode.VACANCY;
+            UserServiceSubscription subscription = userService.extendSubscription(
                     request.telegramId(),
                     request.days(),
-                    request.plan()
+                    request.plan(),
+                    serviceCode
             );
 
-            return ResponseEntity.ok(convertToAdminUserResponse(user));
+            return ResponseEntity.ok(convertToAdminUserResponse(subscription));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(new ErrorResponse("EXTEND_FAILED", e.getMessage()));
         }
@@ -183,12 +206,13 @@ public class AdminController {
             @Parameter(description = "Данные для отмены подписки", required = true)
             @RequestBody CancelSubscriptionRequest request) {
         try {
-            User user = userService.cancelSubscription(request.telegramId());
+            ServiceCode serviceCode = request.service() != null ? request.service() : ServiceCode.VACANCY;
+            UserServiceSubscription subscription = userService.cancelSubscription(request.telegramId(), serviceCode);
             return ResponseEntity.ok(new MessageResponse(
                     "Subscription cancelled for: " +
-                            (user.getUsername() != null ? "@" + user.getUsername() :
-                                    user.getFirstName() != null ? user.getFirstName() :
-                                            "Telegram ID: " + user.getTelegramId())
+                            (subscription.getUser().getUsername() != null ? "@" + subscription.getUser().getUsername() :
+                                    subscription.getUser().getFirstName() != null ? subscription.getUser().getFirstName() :
+                                            "Telegram ID: " + subscription.getUser().getTelegramId())
             ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(new ErrorResponse("CANCEL_FAILED", e.getMessage()));
@@ -204,10 +228,11 @@ public class AdminController {
             @ApiResponse(responseCode = "400", description = "Ошибка при получении списка")
     })
     @GetMapping("/active-subscriptions")
-    public ResponseEntity<?> getActiveSubscriptions() {
+    public ResponseEntity<?> getActiveSubscriptions(@RequestParam(required = false) ServiceCode service) {
         try {
-            List<User> activeUsers = userService.getActiveSubscriptions();
-            List<AdminUserResponse> responses = activeUsers.stream()
+            ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+            List<UserServiceSubscription> activeSubscriptions = userService.getActiveSubscriptions(serviceCode);
+            List<AdminUserResponse> responses = activeSubscriptions.stream()
                     .map(this::convertToAdminUserResponse)
                     .collect(Collectors.toList());
 
@@ -222,10 +247,11 @@ public class AdminController {
             description = "Возвращает список пользователей с истекшими подписками"
     )
     @GetMapping("/expired-subscriptions")
-    public ResponseEntity<?> getExpiredSubscriptions() {
+    public ResponseEntity<?> getExpiredSubscriptions(@RequestParam(required = false) ServiceCode service) {
         try {
-            List<User> expiredUsers = userService.getExpiredSubscriptions();
-            List<AdminUserResponse> responses = expiredUsers.stream()
+            ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+            List<UserServiceSubscription> expiredSubscriptions = userService.getExpiredSubscriptions(serviceCode);
+            List<AdminUserResponse> responses = expiredSubscriptions.stream()
                     .map(this::convertToAdminUserResponse)
                     .collect(Collectors.toList());
 
@@ -242,34 +268,35 @@ public class AdminController {
             description = "Возвращает полную статистику по пользователям, подпискам и платежам"
     )
     @GetMapping("/stats")
-    public ResponseEntity<?> getStats() {
+    public ResponseEntity<?> getStats(@RequestParam(required = false) ServiceCode service) {
         try {
-            List<User> allUsers = userService.getAllUsers();
-            List<User> activeUsers = userService.getActiveSubscriptions();
-            List<User> expiredUsers = userService.getExpiredSubscriptions();
+            ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+            List<UserServiceSubscription> allSubscriptions = userService.getAllUserServices(serviceCode);
+            List<UserServiceSubscription> activeSubscriptions = userService.getActiveSubscriptions(serviceCode);
+            List<UserServiceSubscription> expiredSubscriptions = userService.getExpiredSubscriptions(serviceCode);
 
             // Получаем статистику платежей
             var paymentStats = paymentService.getPaymentStats();
 
             // Считаем распределение по планам
-            Map<SubscriptionPlan, Long> planDistribution = allUsers.stream()
-                    .collect(Collectors.groupingBy(User::getSubscriptionPlan, Collectors.counting()));
+            Map<SubscriptionPlan, Long> planDistribution = allSubscriptions.stream()
+                    .collect(Collectors.groupingBy(UserServiceSubscription::getSubscriptionPlan, Collectors.counting()));
 
             // Считаем распределение по ролям
-            Map<UserRole, Long> roleDistribution = allUsers.stream()
-                    .collect(Collectors.groupingBy(User::getRole, Collectors.counting()));
+            Map<UserRole, Long> roleDistribution = allSubscriptions.stream()
+                    .collect(Collectors.groupingBy(sub -> sub.getUser().getRole(), Collectors.counting()));
 
             // Считаем новых пользователей за последние 30 дней
-            long newUsersLast30Days = allUsers.stream()
-                    .filter(user -> user.getCreatedAt().isAfter(LocalDateTime.now().minusDays(30)))
+            long newUsersLast30Days = allSubscriptions.stream()
+                    .filter(sub -> sub.getUser().getCreatedAt().isAfter(LocalDateTime.now().minusDays(30)))
                     .count();
 
             ExtendedStatsResponse stats = new ExtendedStatsResponse(
-                    allUsers.size(),
-                    activeUsers.size(),
-                    expiredUsers.size(),
-                    allUsers.stream().filter(User::getTrialUsed).count(),
-                    allUsers.stream().filter(user -> !user.getTrialUsed()).count(),
+                    allSubscriptions.size(),
+                    activeSubscriptions.size(),
+                    expiredSubscriptions.size(),
+                    allSubscriptions.stream().filter(UserServiceSubscription::getTrialUsed).count(),
+                    allSubscriptions.stream().filter(sub -> !sub.getTrialUsed()).count(),
                     paymentStats.getTotalPayments(),
                     paymentStats.getPendingPayments(),
                     paymentStats.getVerifiedPayments(),
@@ -335,7 +362,9 @@ public class AdminController {
             @RequestBody UpdateUserRequest request) {
         try {
             User user = userService.updateUserProfile(telegramId, request);
-            return ResponseEntity.ok(convertToAdminUserResponse(user));
+            ServiceCode serviceCode = request.service() != null ? request.service() : ServiceCode.VACANCY;
+            UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
+            return ResponseEntity.ok(convertToAdminUserResponse(subscription));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(new ErrorResponse("UPDATE_FAILED", e.getMessage()));
         }
@@ -351,12 +380,14 @@ public class AdminController {
             @Schema(description = "Email") String email,
             @Schema(description = "Телефон") String phone,
             @Schema(description = "Количество дней подписки") Integer subscriptionDays,
-            @Schema(description = "Тариф подписки") SubscriptionPlan subscriptionPlan
+            @Schema(description = "Тариф подписки") SubscriptionPlan subscriptionPlan,
+            @Schema(description = "Сервис") ServiceCode service
     ) {}
 
     // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
-    private AdminUserResponse convertToAdminUserResponse(User user) {
+    private AdminUserResponse convertToAdminUserResponse(UserServiceSubscription subscription) {
+        User user = subscription.getUser();
         return new AdminUserResponse(
                 user.getTelegramId(),
                 user.getFirstName(),
@@ -364,14 +395,15 @@ public class AdminController {
                 user.getUsername(),
                 user.getEmail(),
                 user.getPhone(),
-                user.getSubscriptionEndDate(),
-                user.getSubscriptionPlan(),
-                telegramAuthService.isSubscriptionActive(user),
-                telegramAuthService.getDaysRemaining(user),
-                user.getTrialUsed(),
+                subscription.getSubscriptionEndDate(),
+                subscription.getSubscriptionPlan(),
+                telegramAuthService.isSubscriptionActive(subscription),
+                telegramAuthService.getDaysRemaining(subscription),
+                subscription.getTrialUsed(),
                 user.getRole().name(),
                 user.getCreatedAt(),
-                user.getLastLoginAt()
+                user.getLastLoginAt(),
+                subscription.getServiceCode().name()
         );
     }
 
@@ -390,11 +422,13 @@ public class AdminController {
     public record ExtendSubscriptionRequest(
             @Schema(description = "Telegram ID пользователя", required = true) Long telegramId,
             @Schema(description = "Количество дней для продления", required = true) int days,
-            @Schema(description = "Тип подписки", required = true) SubscriptionPlan plan) {}
+            @Schema(description = "Тип подписки", required = true) SubscriptionPlan plan,
+            @Schema(description = "Сервис") ServiceCode service) {}
 
     @Schema(description = "Запрос на отмену подписки")
     public record CancelSubscriptionRequest(
-            @Schema(description = "Telegram ID пользователя", required = true) Long telegramId) {}
+            @Schema(description = "Telegram ID пользователя", required = true) Long telegramId,
+            @Schema(description = "Сервис") ServiceCode service) {}
 
     // Response DTOs
     @Schema(description = "Ответ с информацией о пользователе для администратора")
@@ -412,7 +446,8 @@ public class AdminController {
             @Schema(description = "Использован ли trial") Boolean trialUsed,
             @Schema(description = "Роль пользователя") String role,
             @Schema(description = "Дата создания") java.time.LocalDateTime createdAt,
-            @Schema(description = "Дата последнего входа") java.time.LocalDateTime lastLoginAt
+            @Schema(description = "Дата последнего входа") java.time.LocalDateTime lastLoginAt,
+            @Schema(description = "Сервис") String serviceCode
     ) {}
 
     @Schema(description = "Ответ со списком пользователей")

@@ -1,9 +1,12 @@
 package com.mkisten.subscriptionbackend.controller;
 
 import com.mkisten.subscription.contract.dto.subscription.SubscriptionStatusDto;
+import com.mkisten.subscription.contract.enums.ServiceCodeDto;
 import com.mkisten.subscription.contract.enums.SubscriptionPlanDto;
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
 import com.mkisten.subscriptionbackend.entity.User;
+import com.mkisten.subscriptionbackend.entity.UserServiceSubscription;
 import com.mkisten.subscriptionbackend.service.SubscriptionStatusService;
 import com.mkisten.subscriptionbackend.service.TelegramAuthService;
 import com.mkisten.subscriptionbackend.service.UserService;
@@ -45,24 +48,29 @@ public class SubscriptionController {
     })
     @GetMapping("/status")
     public ResponseEntity<SubscriptionStatusDto> getSubscriptionStatus(
-            @AuthenticationPrincipal User user) {
+            @AuthenticationPrincipal User user,
+            @RequestParam(required = false) ServiceCode service) {
         if (user == null) {
             // здесь можно кинуть InvalidTokenException/SubscriptionExpiredException
             // и отдать ApiErrorDto через GlobalExceptionHandler
             return ResponseEntity.status(401).build();
         }
 
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
+
         log.info("=== SUBSCRIPTION STATUS CHECK ===");
         log.info("User: {} {}", user.getFirstName(), user.getLastName());
         log.info("Telegram ID: {}", user.getTelegramId());
-        log.info("Plan: {}", user.getSubscriptionPlan());
-        log.info("End Date: {}", user.getSubscriptionEndDate());
+        log.info("Service: {}", serviceCode);
+        log.info("Plan: {}", subscription.getSubscriptionPlan());
+        log.info("End Date: {}", subscription.getSubscriptionEndDate());
         log.info("Today: {}", LocalDate.now());
-        log.info("Trial Used: {}", user.getTrialUsed());
-        log.info("DB Active Flag: {}", user.isActive());
+        log.info("Trial Used: {}", subscription.getTrialUsed());
+        log.info("DB Active Flag: {}", subscription.isActive());
 
-        boolean isActive = telegramAuthService.isSubscriptionActive(user);
-        long daysRemaining = telegramAuthService.getDaysRemaining(user);
+        boolean isActive = telegramAuthService.isSubscriptionActive(subscription);
+        long daysRemaining = telegramAuthService.getDaysRemaining(subscription);
 
         log.info("=== CHECK RESULT ===");
         log.info("Active: {}", isActive);
@@ -74,17 +82,18 @@ public class SubscriptionController {
         dto.setLastName(user.getLastName());
         dto.setUsername(user.getUsername());
         dto.setEmail(user.getEmail());
-        dto.setSubscriptionEndDate(user.getSubscriptionEndDate());
+        dto.setSubscriptionEndDate(subscription.getSubscriptionEndDate());
         // если в контракте SubscriptionPlanDto — маппишь через valueOf
         dto.setSubscriptionPlan(
-                user.getSubscriptionPlan() != null
-                        ? SubscriptionPlanDto.valueOf(user.getSubscriptionPlan().name())
+                subscription.getSubscriptionPlan() != null
+                        ? SubscriptionPlanDto.valueOf(subscription.getSubscriptionPlan().name())
                         : null
         );
         dto.setActive(isActive);
         dto.setDaysRemaining(daysRemaining);
-        dto.setTrialUsed(user.getTrialUsed());
+        dto.setTrialUsed(subscription.getTrialUsed());
         dto.setRole(user.getRole().name());
+        dto.setServiceCode(ServiceCodeDto.valueOf(serviceCode.name()));
 
         return ResponseEntity.ok(dto);
     }
@@ -95,8 +104,9 @@ public class SubscriptionController {
     )
     @GetMapping("/my-status")
     public ResponseEntity<SubscriptionStatusDto> getMySubscriptionStatus(
-            @AuthenticationPrincipal User user) {
-        return getSubscriptionStatus(user);
+            @AuthenticationPrincipal User user,
+            @RequestParam(required = false) ServiceCode service) {
+        return getSubscriptionStatus(user, service);
     }
 
     @Operation(
@@ -105,19 +115,22 @@ public class SubscriptionController {
     )
     @GetMapping("/check-active")
     public ResponseEntity<SubscriptionCheckResponse> checkSubscriptionActive(
-            @AuthenticationPrincipal User user) {
+            @AuthenticationPrincipal User user,
+            @RequestParam(required = false) ServiceCode service) {
         if (user == null) {
             return ResponseEntity.status(401).build();
         }
 
-        boolean isActive = telegramAuthService.isSubscriptionActive(user);
-        long daysRemaining = telegramAuthService.getDaysRemaining(user);
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
+        boolean isActive = telegramAuthService.isSubscriptionActive(subscription);
+        long daysRemaining = telegramAuthService.getDaysRemaining(subscription);
 
         return ResponseEntity.ok(new SubscriptionCheckResponse(
                 isActive,
                 daysRemaining,
-                user.getSubscriptionEndDate(),
-                user.getSubscriptionPlan()
+                subscription.getSubscriptionEndDate(),
+                subscription.getSubscriptionPlan()
         ));
     }
 
@@ -127,24 +140,28 @@ public class SubscriptionController {
     )
     @PostMapping("/refresh-status")
     public ResponseEntity<Map<String, Object>> refreshSubscriptionStatus(
-            @AuthenticationPrincipal User user) {
+            @AuthenticationPrincipal User user,
+            @RequestParam(required = false) ServiceCode service) {
         if (user == null) {
             return ResponseEntity.status(401).body(
                     Map.of("error", "USER_NOT_AUTHENTICATED", "message", "User not authenticated")
             );
         }
 
-        boolean wasActive = user.isActive();
-        subscriptionStatusService.updateUserSubscriptionStatus(user.getTelegramId());
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
+        boolean wasActive = subscription.isActive();
+        subscriptionStatusService.updateUserSubscriptionStatus(subscription);
 
-        User updatedUser = userService.findByTelegramId(user.getTelegramId());
-        boolean isNowActive = telegramAuthService.isSubscriptionActive(updatedUser);
+        UserServiceSubscription updatedSubscription = userService.getOrCreateService(user, serviceCode);
+        boolean isNowActive = telegramAuthService.isSubscriptionActive(updatedSubscription);
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "Subscription status refreshed");
         response.put("wasActive", wasActive);
         response.put("isNowActive", isNowActive);
-        response.put("subscriptionEndDate", updatedUser.getSubscriptionEndDate());
+        response.put("subscriptionEndDate", updatedSubscription.getSubscriptionEndDate());
+        response.put("service", serviceCode.name());
         response.put("today", LocalDate.now());
         response.put("statusChanged", wasActive != isNowActive);
 
@@ -157,31 +174,36 @@ public class SubscriptionController {
     )
     @GetMapping("/debug/detailed-status")
     public ResponseEntity<Map<String, Object>> getDetailedSubscriptionStatus(
-            @AuthenticationPrincipal User user) {
+            @AuthenticationPrincipal User user,
+            @RequestParam(required = false) ServiceCode service) {
         if (user == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
         }
 
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
+        UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
+
         LocalDate today = LocalDate.now();
-        LocalDate endDate = user.getSubscriptionEndDate();
+        LocalDate endDate = subscription.getSubscriptionEndDate();
 
         Map<String, Object> debugInfo = new HashMap<>();
         debugInfo.put("telegramId", user.getTelegramId());
         debugInfo.put("firstName", user.getFirstName());
-        debugInfo.put("subscriptionPlan", user.getSubscriptionPlan());
+        debugInfo.put("service", serviceCode.name());
+        debugInfo.put("subscriptionPlan", subscription.getSubscriptionPlan());
         debugInfo.put("subscriptionEndDate", endDate);
-        debugInfo.put("trialUsed", user.getTrialUsed());
-        debugInfo.put("dbActiveFlag", user.isActive());
+        debugInfo.put("trialUsed", subscription.getTrialUsed());
+        debugInfo.put("dbActiveFlag", subscription.isActive());
         debugInfo.put("currentDate", today);
         debugInfo.put("isEndDateAfterToday", endDate != null && endDate.isAfter(today));
         debugInfo.put("isEndDateEqualToday", endDate != null && endDate.isEqual(today));
         debugInfo.put("isEndDateBeforeToday", endDate != null && endDate.isBefore(today));
-        debugInfo.put("calculatedActive", telegramAuthService.calculateSubscriptionActive(user));
+        debugInfo.put("calculatedActive", telegramAuthService.calculateSubscriptionActive(subscription));
         debugInfo.put("daysBetween", endDate != null
                 ? java.time.temporal.ChronoUnit.DAYS.between(today, endDate)
                 : -1);
 
-        boolean isActive = telegramAuthService.isSubscriptionActive(user);
+        boolean isActive = telegramAuthService.isSubscriptionActive(subscription);
         debugInfo.put("serviceResult", isActive);
 
         return ResponseEntity.ok(debugInfo);
