@@ -155,8 +155,7 @@ public class AuthController {
             @AuthenticationPrincipal UserDetails principal,
             @RequestParam(required = false) ServiceCode service
     ) {
-        String username = principal.getUsername();
-        User user = userService.findByUsername(username);
+        User user = resolveUser(principal);
 
         ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
         UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
@@ -172,8 +171,7 @@ public class AuthController {
             @AuthenticationPrincipal UserDetails principal,
             @RequestBody ProfileUpdateRequest request
     ) {
-        String username = principal.getUsername();
-        User user = userService.findByUsername(username);
+        User user = resolveUser(principal);
 
         User updated = userService.updateUserProfile(user.getTelegramId(), request);
         UserServiceSubscription subscription = userService.getOrCreateService(updated, ServiceCode.VACANCY);
@@ -238,12 +236,19 @@ public class AuthController {
             @AuthenticationPrincipal UserDetails principal,
             @RequestParam(required = false) ServiceCode service
     ) {
-        String username = principal.getUsername();
-        User user = userService.findByUsername(username);
+        User user = resolveUser(principal);
         ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
         UserServiceSubscription subscription = userService.getOrCreateService(user, serviceCode);
         SubscriptionStatusDto dto = mapUserToSubscriptionStatusDto(user, subscription);
         return ResponseEntity.ok(dto);
+    }
+
+    private User resolveUser(UserDetails principal) {
+        if (principal instanceof User user) {
+            return user;
+        }
+        String username = principal.getUsername();
+        return userService.findByUsername(username);
     }
 
     private SubscriptionStatusDto mapUserToSubscriptionStatusDto(User user, UserServiceSubscription subscription) {
