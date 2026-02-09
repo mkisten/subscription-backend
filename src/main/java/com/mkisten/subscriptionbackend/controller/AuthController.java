@@ -132,6 +132,31 @@ public class AuthController {
     }
 
     /**
+     * Регистрация пользователя по telegramId (для сервисных ботов).
+     */
+    @PostMapping("/telegram/register")
+    public ResponseEntity<TokenResponseDto> registerTelegram(@RequestBody TelegramRegisterRequest request) {
+        if (request == null || request.telegramId() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        User user = userService.findByTelegramIdOptional(request.telegramId())
+                .orElseGet(() -> userService.createUser(
+                        request.telegramId(),
+                        request.firstName(),
+                        request.lastName(),
+                        request.username()
+                ));
+        ServiceCode serviceCode = request.service() != null ? request.service() : ServiceCode.VACANCY;
+        userService.getOrCreateService(user, serviceCode);
+
+        String token = jwtUtil.generateToken(user.getTelegramId());
+        userService.updateLastLogin(user.getTelegramId());
+        userService.updateServiceLastLogin(user.getTelegramId(), serviceCode);
+
+        return ResponseEntity.ok(new TokenResponseDto(token));
+    }
+
+    /**
      * Валидация токена.
      * Для фильтра в vacancy‑сервисе.
      * Если токен невалидный, сюда вообще не дойдет – Spring Security отдаст 401.
@@ -278,6 +303,14 @@ public class AuthController {
     }
 
     public record TokenRequest(Long telegramId, ServiceCode service) {}
+
+    public record TelegramRegisterRequest(
+            Long telegramId,
+            String firstName,
+            String lastName,
+            String username,
+            ServiceCode service
+    ) {}
 
     public record ProfileUpdateRequest(
             String firstName,

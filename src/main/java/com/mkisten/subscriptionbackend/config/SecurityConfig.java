@@ -47,6 +47,7 @@ public class SecurityConfig {
 
                         // Публичные эндпоинты
                         .requestMatchers("/api/auth/token/**", "/api/auth/login",
+                                "/api/auth/telegram/register",
                                 "/api/auth/credentials/availability",
                                 "/api/telegram-auth/**",
                                 "/api/test/**", "/health/**", "/actuator/**").permitAll()
