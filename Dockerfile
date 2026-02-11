@@ -26,6 +26,9 @@ FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
+# curl нужен для healthcheck
+RUN apk add --no-cache curl
+
 # Создаем пользователя для безопасности
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
