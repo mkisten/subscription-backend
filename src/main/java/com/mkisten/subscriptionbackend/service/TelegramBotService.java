@@ -631,12 +631,25 @@ public class TelegramBotService extends TelegramLongPollingBot {
                     + "🔐 **Вы можете вернуться в приложение.**\n"
                     + "Авторизация произойдет автоматически.";
 
-            sendTextMessage(chatId, subscriptionInfo);
+            try {
+                sendTextMessage(chatId, subscriptionInfo);
+            } catch (Exception sendError) {
+                log.warn("Auth completed but failed to send message to user {}: {}", chatId, sendError.getMessage());
+            }
 
             log.info("User authenticated via deep link: {}, session: {}", chatId, sessionId);
 
         } catch (Exception e) {
             log.error("Error in handleExistingUserAuth for user: {}, session: {}", chatId, sessionId, e);
+            try {
+                Optional<AuthSession> session = authSessionService.findBySessionId(sessionId);
+                if (session.isPresent() && session.get().getStatus() == AuthSession.AuthStatus.COMPLETED) {
+                    log.warn("Auth session {} already completed, skipping error message", sessionId);
+                    return;
+                }
+            } catch (Exception ignore) {
+                // ignore
+            }
             sendTextMessage(chatId, "❌ Внутренняя ошибка при авторизации.");
         }
     }
