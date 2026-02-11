@@ -28,8 +28,7 @@ public class PaymentController {
             @RequestBody CreatePaymentRequestDto request,
             Authentication authentication
     ) {
-        String username = authentication.getName();
-        User user = userService.findByUsername(username);
+        User user = resolveUser(authentication);
 
         SubscriptionPlan plan = request.getPlan() != null
                 ? SubscriptionPlan.valueOf(request.getPlan().name())
@@ -69,8 +68,7 @@ public class PaymentController {
     @GetMapping("/my-payments")
     public ResponseEntity<List<Payment>> getUserPayments(Authentication authentication) {
         try {
-            String username = authentication.getName();
-            User user = userService.findByUsername(username);
+            User user = resolveUser(authentication);
 
             List<Payment> payments = paymentService.getUserPayments(user.getTelegramId());
             return ResponseEntity.ok(payments);
@@ -78,6 +76,23 @@ public class PaymentController {
             e.printStackTrace();
             return ResponseEntity.badRequest().build();
         }
+    }
+
+    private User resolveUser(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof User user) {
+            return user;
+        }
+        String name = authentication != null ? authentication.getName() : null;
+        if (name != null) {
+            try {
+                Long telegramId = Long.parseLong(name);
+                return userService.findByTelegramId(telegramId);
+            } catch (NumberFormatException ignored) {
+                // fall through
+            }
+            return userService.findByUsername(name);
+        }
+        throw new IllegalStateException("Authenticated user not found");
     }
 
     @GetMapping("/{paymentId}/status")
