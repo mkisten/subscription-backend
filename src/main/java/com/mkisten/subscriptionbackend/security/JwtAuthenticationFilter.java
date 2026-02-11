@@ -112,6 +112,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private boolean isPublicEndpoint(String path) {
         return path.startsWith("/api/auth/token") ||
                 path.equals("/api/auth/login") ||
+                path.equals("/api/auth/telegram/register") ||
                 path.equals("/api/auth/credentials/availability") ||
                 path.startsWith("/api/telegram-auth") ||
                 path.startsWith("/api/test") ||
