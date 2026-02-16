@@ -53,7 +53,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String authorizationHeader = request.getHeader("Authorization");
 
         if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
-            sendError(response, "Missing or invalid Authorization header");
+            sendError(request, response, "Missing or invalid Authorization header");
             return;
         }
 
@@ -63,14 +63,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Long telegramId = jwtUtil.extractTelegramId(jwt);
 
             if (!jwtUtil.validateToken(jwt)) {
-                sendError(response, "Invalid token");
+                sendError(request, response, "Invalid token");
                 return;
             }
 
             User user = userService.findByTelegramId(telegramId);
 
             if (!jwtUtil.validateToken(jwt, telegramId)) {
-                sendError(response, "Token user mismatch");
+                sendError(request, response, "Token user mismatch");
                 return;
             }
 
@@ -83,14 +83,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             log.debug("Authenticated user: {} with role: {}", user.getTelegramId(), user.getRole());
 
         } catch (Exception e) {
-            sendError(response, "Authentication failed: " + e.getMessage());
+            sendError(request, response, "Authentication failed: " + e.getMessage());
             return;
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private void sendError(HttpServletResponse response, String message) throws IOException {
+    private void sendError(HttpServletRequest request, HttpServletResponse response, String message) throws IOException {
         log.warn("Authentication error: {}", message);
 //        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 //        response.setContentType("application/json");
@@ -103,6 +103,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         body.put("error", status.getReasonPhrase());
         body.put("code", "UNAUTHORIZED");
         body.put("message", message);
+
+        String origin = request.getHeader("Origin");
+        if (origin == null || origin.isBlank()) {
+            // Fallback when the request did not pass through a CORS filter.
+            origin = "*";
+        }
+        response.setHeader("Access-Control-Allow-Origin", origin);
+        response.setHeader("Vary", "Origin");
+        response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+        response.setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type,Accept,Origin,X-Requested-With");
 
         response.setStatus(status.value());
         response.setContentType("application/json");
