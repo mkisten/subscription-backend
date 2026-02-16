@@ -71,10 +71,12 @@ jobs:
               fi
             else
               echo "📥 Cloning repository..."
-              git clone https://$GIT_PAT@github.com/mkisten/subscription-backend.git "${APP_DIR}-temp"
-              mv "${APP_DIR}-temp/.git" ./
+              TMP_CLONE_DIR="${APP_DIR}/.deploy-tmp"
+              rm -rf "$TMP_CLONE_DIR"
+              git clone https://$GIT_PAT@github.com/mkisten/subscription-backend.git "$TMP_CLONE_DIR"
+              mv "$TMP_CLONE_DIR/.git" ./
               git reset --hard
-              rm -rf "${APP_DIR}-temp"
+              rm -rf "$TMP_CLONE_DIR"
             fi
             
             unset GIT_PAT
