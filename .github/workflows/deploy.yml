@@ -20,6 +20,10 @@ jobs:
           script: |
             set -e
             echo "🚀 Starting deployment from GitHub..."
+            APP_DIR="${{ secrets.DEPLOY_PATH }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="/opt/subscription-backend"
+            fi
             
             # Install/ensure Docker Compose v2 (manual curl method, idempotent)
             echo "🐳 Ensuring Docker Compose v2 is installed..."
@@ -35,12 +39,16 @@ jobs:
             
             # Cleanup and prepare
             docker system prune -f
-            mkdir -p /root/subscription-backend
-            cd /root/subscription-backend
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
             
             # Use Git instead of file copying
             echo "🔑 Setting up Git authentication..."
             export GITHUB_PAT="${{ secrets.GITHUB_PAT }}"
+            if [ -z "$GITHUB_PAT" ]; then
+              echo "❌ GITHUB_PAT is empty. Add GITHUB_PAT secret."
+              exit 1
+            fi
             
             if [ -d ".git" ]; then
               echo "📥 Pulling latest changes..."
@@ -63,10 +71,10 @@ jobs:
               fi
             else
               echo "📥 Cloning repository..."
-              git clone https://$GITHUB_PAT@github.com/mkisten/subscription-backend.git /root/subscription-backend-temp
-              mv /root/subscription-backend-temp/.git ./
+              git clone https://$GITHUB_PAT@github.com/mkisten/subscription-backend.git "${APP_DIR}-temp"
+              mv "${APP_DIR}-temp/.git" ./
               git reset --hard
-              rm -rf /root/subscription-backend-temp
+              rm -rf "${APP_DIR}-temp"
             fi
             
             unset GITHUB_PAT
