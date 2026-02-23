@@ -21,7 +21,7 @@ public class JwtUtil {
     @Value("${jwt.secret:defaultSecretKeyThatIsAtLeast32CharactersLongForTelegramAuth}")
     private String secret;
 
-    @Value("${jwt.expiration:604800000}") // 7 дней в миллисекундах
+    @Value("${jwt.expiration:31536000}") // 1 год в секундах
     private Long expiration;
 
     @Value("${jwt.clock-skew:30000}") // 30 секунд допуск на рассинхронизацию времени
@@ -42,9 +42,9 @@ public class JwtUtil {
      */
     public String generateToken(Long telegramId) {
         Date issuedAt = new Date();
-        Date expiration = new Date(System.currentTimeMillis() + this.expiration*1000);
+        Date expiration = new Date(System.currentTimeMillis() + expirationMillis());
 
-        log.info("Generating JWT token - User: {}, Issued: {}, Expires: {}, Expiration ms: {}",
+        log.info("Generating JWT token - User: {}, Issued: {}, Expires: {}, Expiration seconds: {}",
                 telegramId, issuedAt, expiration, this.expiration);
 
         return Jwts.builder()
@@ -70,9 +70,13 @@ public class JwtUtil {
                 .setClaims(claims)
                 .setSubject(subject)
                 .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + expiration))
+                .setExpiration(new Date(System.currentTimeMillis() + expirationMillis()))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
+    }
+
+    private long expirationMillis() {
+        return expiration * 1000L;
     }
 
     /**
