@@ -23,4 +23,9 @@ public class SessionStatusDto {
      * JWT токен, если авторизация завершилась успешно.
      */
     private String token;
+
+    /**
+     * Deeplink в Telegram-бота для подтверждения авторизации.
+     */
+    private String authLink;
 }

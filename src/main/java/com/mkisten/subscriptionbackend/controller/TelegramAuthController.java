@@ -3,6 +3,7 @@ package com.mkisten.subscriptionbackend.controller;
 import com.mkisten.subscription.contract.dto.telegram.CreateSessionRequestDto;
 import com.mkisten.subscription.contract.dto.telegram.SessionStatusDto;
 import com.mkisten.subscriptionbackend.entity.AuthSession;
+import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.security.JwtUtil;
 import com.mkisten.subscriptionbackend.service.AuthSessionService;
 import com.mkisten.subscriptionbackend.service.TelegramBotService;
@@ -37,8 +38,10 @@ public class TelegramAuthController {
      */
     @PostMapping("/create-session")
     public ResponseEntity<SessionStatusDto> createSession(
-            @RequestBody CreateSessionRequestDto request
+            @RequestBody CreateSessionRequestDto request,
+            @RequestParam(required = false) ServiceCode service
     ) {
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
         var session = authSessionService.createSession(request.getDeviceId());
 
         SessionStatusDto dto = new SessionStatusDto();
@@ -47,6 +50,7 @@ public class TelegramAuthController {
         dto.setStatus(session.getStatus().name());
         dto.setMessage("Session created");
         dto.setToken(null);
+        dto.setAuthLink(telegramBotService.generateAuthDeepLink(session.getSessionId(), session.getDeviceId(), serviceCode));
 
         return ResponseEntity.ok(dto);
     }
@@ -57,8 +61,10 @@ public class TelegramAuthController {
     @GetMapping("/status/{sessionId}")
     public ResponseEntity<SessionStatusDto> getStatus(
             @PathVariable String sessionId,
-            @RequestParam(required = false) String deviceId
+            @RequestParam(required = false) String deviceId,
+            @RequestParam(required = false) ServiceCode service
     ) {
+        ServiceCode serviceCode = service != null ? service : ServiceCode.VACANCY;
         var status = authSessionService.checkAuthStatus(sessionId, deviceId);
 
         SessionStatusDto dto = new SessionStatusDto();
@@ -67,6 +73,9 @@ public class TelegramAuthController {
         dto.setStatus(status.getStatus().name());
         dto.setMessage(status.getMessage());
         dto.setToken(status.getJwtToken());
+        if (status.getStatus() == AuthSessionService.AuthStatus.PENDING) {
+            dto.setAuthLink(telegramBotService.generateAuthDeepLink(sessionId, deviceId, serviceCode));
+        }
 
         return ResponseEntity.ok(dto);
     }

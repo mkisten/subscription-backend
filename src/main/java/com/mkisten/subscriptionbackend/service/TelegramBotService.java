@@ -44,6 +44,15 @@ public class TelegramBotService extends TelegramLongPollingBot {
     @Value("${telegram.bot.username:hhsubscription_bot}")
     private String botUsername;
 
+    @Value("${telegram.bot.username.vacancy:}")
+    private String vacancyBotUsername;
+
+    @Value("${telegram.bot.username.shopping:}")
+    private String shoppingBotUsername;
+
+    @Value("${telegram.bot.username.family:}")
+    private String familyBotUsername;
+
     @Value("${admin.chat.id:6927880904}")
     private String adminChatId;
 
@@ -849,12 +858,28 @@ public class TelegramBotService extends TelegramLongPollingBot {
     }
 
     public String generateAuthDeepLink(String sessionId, String deviceId) {
+        return generateAuthDeepLink(sessionId, deviceId, ServiceCode.VACANCY);
+    }
+
+    public String generateAuthDeepLink(String sessionId, String deviceId, ServiceCode serviceCode) {
+        String targetBotUsername = resolveBotUsername(serviceCode);
         if (deviceId == null || deviceId.isEmpty() || "unknown".equals(deviceId)) {
-            return "https://t.me/" + botUsername + "?start=auth_" + sessionId;
+            return "https://t.me/" + targetBotUsername + "?start=auth_" + sessionId;
         } else {
             String safeDeviceId = deviceId.replace("_", "-");
-            return "https://t.me/" + botUsername + "?start=auth_" + sessionId + "_" + safeDeviceId;
+            return "https://t.me/" + targetBotUsername + "?start=auth_" + sessionId + "_" + safeDeviceId;
         }
+    }
+
+    private String resolveBotUsername(ServiceCode serviceCode) {
+        if (serviceCode == null) {
+            return botUsername;
+        }
+        return switch (serviceCode) {
+            case VACANCY -> vacancyBotUsername == null || vacancyBotUsername.isBlank() ? botUsername : vacancyBotUsername;
+            case SHOPPING -> shoppingBotUsername == null || shoppingBotUsername.isBlank() ? botUsername : shoppingBotUsername;
+            case FAMILY -> familyBotUsername == null || familyBotUsername.isBlank() ? botUsername : familyBotUsername;
+        };
     }
 
     private void handleStatusCommand(Long chatId) {

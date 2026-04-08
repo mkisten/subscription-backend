@@ -90,7 +90,7 @@ class SubscriptionBackendControllerTest {
                 new com.mkisten.subscription.contract.dto.telegram.CreateSessionRequestDto();
         req.setDeviceId("d");
 
-        ResponseEntity<?> response = controller.createSession(req);
+        ResponseEntity<?> response = controller.createSession(req, ServiceCode.VACANCY);
         com.mkisten.subscription.contract.dto.telegram.SessionStatusDto body =
                 (com.mkisten.subscription.contract.dto.telegram.SessionStatusDto) response.getBody();
         assertEquals("s", body.getSessionId());
