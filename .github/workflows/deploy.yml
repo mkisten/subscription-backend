@@ -141,9 +141,19 @@ jobs:
 
             # Deploy containers
             echo "🔨 Building and starting containers..."
-            docker compose down
+            docker compose down --remove-orphans || true
+
+            # Defensive cleanup for stale named containers/networks that may remain from failed runs
+            for c in subscription_postgres subscription_backend vacancy_postgres vacancy_backend graylog_mongo graylog_opensearch graylog; do
+              if docker ps -a --format '{{.Names}}' | grep -qx "$c"; then
+                echo "🧹 Removing stale container: $c"
+                docker rm -f "$c" || true
+              fi
+            done
+            docker network rm subscription-backend_app_network >/dev/null 2>&1 || true
+
             docker compose build --no-cache
-            docker compose up -d
+            docker compose up -d --remove-orphans
             
             # Health check with retry
             echo "🏥 Performing health check..."
