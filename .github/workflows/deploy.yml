@@ -111,10 +111,29 @@ jobs:
             upsert_env "JWT_EXPIRATION" "86400"
 
             upsert_env "TELEGRAM_BOT_TOKEN" "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-            upsert_env "TELEGRAM_BOT_USERNAME" "${{ secrets.TELEGRAM_BOT_USERNAME }}"
-            upsert_env "TELEGRAM_BOT_USERNAME_VACANCY" "${{ secrets.TELEGRAM_BOT_USERNAME_VACANCY }}"
-            upsert_env "TELEGRAM_BOT_USERNAME_SHOPPING" "${{ secrets.TELEGRAM_BOT_USERNAME_SHOPPING }}"
-            upsert_env "TELEGRAM_BOT_USERNAME_FAMILY" "${{ secrets.TELEGRAM_BOT_USERNAME_FAMILY }}"
+            BASE_BOT_USERNAME="${{ secrets.TELEGRAM_BOT_USERNAME }}"
+            if [ -z "$BASE_BOT_USERNAME" ]; then
+              BASE_BOT_USERNAME="hhsubscription_bot"
+            fi
+            upsert_env "TELEGRAM_BOT_USERNAME" "$BASE_BOT_USERNAME"
+
+            BOT_USERNAME_VACANCY="${{ secrets.TELEGRAM_BOT_USERNAME_VACANCY }}"
+            if [ -z "$BOT_USERNAME_VACANCY" ]; then
+              BOT_USERNAME_VACANCY="$BASE_BOT_USERNAME"
+            fi
+            upsert_env "TELEGRAM_BOT_USERNAME_VACANCY" "$BOT_USERNAME_VACANCY"
+
+            BOT_USERNAME_SHOPPING="${{ secrets.TELEGRAM_BOT_USERNAME_SHOPPING }}"
+            if [ -z "$BOT_USERNAME_SHOPPING" ]; then
+              BOT_USERNAME_SHOPPING="$BASE_BOT_USERNAME"
+            fi
+            upsert_env "TELEGRAM_BOT_USERNAME_SHOPPING" "$BOT_USERNAME_SHOPPING"
+
+            BOT_USERNAME_FAMILY="${{ secrets.TELEGRAM_BOT_USERNAME_FAMILY }}"
+            if [ -z "$BOT_USERNAME_FAMILY" ]; then
+              BOT_USERNAME_FAMILY="$BASE_BOT_USERNAME"
+            fi
+            upsert_env "TELEGRAM_BOT_USERNAME_FAMILY" "$BOT_USERNAME_FAMILY"
 
             upsert_env "FRONTEND_URL" "http://localhost:3000"
             upsert_env "SERVER_PORT" "8080"
