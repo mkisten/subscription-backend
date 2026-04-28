@@ -9,8 +9,6 @@ services:
       POSTGRES_DB: ${SUBSCRIPTION_POSTGRES_DB}
       POSTGRES_USER: ${SUBSCRIPTION_POSTGRES_USER}
       POSTGRES_PASSWORD: ${SUBSCRIPTION_POSTGRES_PASSWORD}
-    ports:
-      - "5432:5432"
     volumes:
       - subscription_postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -71,8 +69,6 @@ services:
       POSTGRES_DB: ${VACANCY_POSTGRES_DB}
       POSTGRES_USER: ${VACANCY_POSTGRES_USER}
       POSTGRES_PASSWORD: ${VACANCY_POSTGRES_PASSWORD}
-    ports:
-      - "5433:5432"
     volumes:
       - vacancy_postgres_data:/var/lib/postgresql/data
       - ./vacancy-backend/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -93,8 +89,6 @@ services:
       POSTGRES_DB: ${HH_PARSER_POSTGRES_DB:-hh_parser_service}
       POSTGRES_USER: ${HH_PARSER_POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${HH_PARSER_POSTGRES_PASSWORD:-postgres}
-    ports:
-      - "5434:5432"
     volumes:
       - hh_parser_postgres_data:/var/lib/postgresql/data
       - ./hh-parser-backend/init.sql:/docker-entrypoint-initdb.d/init.sql
