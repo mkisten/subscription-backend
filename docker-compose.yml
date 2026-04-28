@@ -1,4 +1,4 @@
-﻿version: '3.8'
+version: '3.8'
 
 services:
   subscription_postgres:
@@ -124,7 +124,9 @@ services:
       hh_parser_postgres:
         condition: service_healthy
     networks:
-      - app_network
+      app_network:
+        aliases:
+          - hh-parser-app
     restart: unless-stopped
     logging:
       driver: "gelf"
@@ -162,7 +164,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRATION=${JWT_EXPIRATION}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-https://api.subscriptionhhapp.ru}
-      - HH_BASE_URL=${HH_BASE_URL:-http://hh_parser_app:8084/api}
+      - HH_BASE_URL=${HH_BASE_URL:-http://hh-parser-app:8084/api}
       - SERVER_PORT=8081
       - SERVER_SERVLET_CONTEXT_PATH=/api
     depends_on:
@@ -240,3 +242,4 @@ volumes:
 networks:
   app_network:
     driver: bridge
+

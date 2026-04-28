@@ -74,7 +74,7 @@ jobs:
               AUTH_SERVICE_URL=https://api.subscriptionhhapp.ru
             
               # HH.ru API Configuration (optional)
-              HH_BASE_URL=https://api.hh.ru
+              HH_BASE_URL=http://hh-parser-app:8084/api
               HH_TIMEOUT=10000
               HH_REQUESTS_PER_SECOND=10
             EOF
@@ -345,3 +345,4 @@ jobs:
             docker compose ps
             echo "💾 Disk usage:"
             df -h
+
