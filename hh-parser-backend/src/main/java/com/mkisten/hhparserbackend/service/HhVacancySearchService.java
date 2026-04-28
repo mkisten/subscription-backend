@@ -1,7 +1,13 @@
 package com.mkisten.hhparserbackend.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mkisten.hhparserbackend.entity.ScrapedVacancy;
+import com.mkisten.hhparserbackend.entity.SearchPageCache;
+import com.mkisten.hhparserbackend.entity.SearchProfile;
 import com.mkisten.hhparserbackend.repository.ScrapedVacancyRepository;
+import com.mkisten.hhparserbackend.repository.SearchPageCacheRepository;
+import com.mkisten.hhparserbackend.repository.SearchProfileRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -12,18 +18,21 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -33,6 +42,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -47,6 +57,8 @@ public class HhVacancySearchService {
     private static final Pattern INTEGER_PATTERN = Pattern.compile("\\d+");
     private static final DateTimeFormatter HH_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ");
     private static final ZoneId HH_ZONE = ZoneId.of("Europe/Moscow");
+    private static final TypeReference<List<Map<String, Object>>> ITEM_LIST_TYPE = new TypeReference<>() {};
+    private static final TypeReference<Map<String, List<String>>> PARAMS_TYPE = new TypeReference<>() {};
     private static final Map<String, Integer> MONTHS = Map.ofEntries(
             Map.entry("января", 1), Map.entry("февраля", 2), Map.entry("марта", 3), Map.entry("апреля", 4),
             Map.entry("мая", 5), Map.entry("июня", 6), Map.entry("июля", 7), Map.entry("августа", 8),
@@ -54,6 +66,9 @@ public class HhVacancySearchService {
     );
 
     private final ScrapedVacancyRepository scrapedVacancyRepository;
+    private final SearchProfileRepository searchProfileRepository;
+    private final SearchPageCacheRepository searchPageCacheRepository;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.hh.base-url}")
     private String baseUrl;
@@ -73,35 +88,94 @@ public class HhVacancySearchService {
     @Value("${app.hh.default-area-belarus}")
     private String defaultAreaBelarus;
 
-    public Map<String, Object> search(MultiValueMap<String, String> params) {
-        String text = normalizeBlank(params.getFirst("text"));
-        String area = normalizeBlank(params.getFirst("area"));
-        int page = parseInt(params.getFirst("page"), 0);
-        int requestedPerPage = clamp(parseInt(params.getFirst("per_page"), 20), 1, 100);
-        boolean onlyWithSalary = Boolean.parseBoolean(Optional.ofNullable(params.getFirst("only_with_salary")).orElse("false"));
-        Integer period = parseNullableInt(params.getFirst("period"));
+    @Value("${app.cache.ttl-minutes:30}")
+    private int cacheTtlMinutes;
 
-        SearchResult searchResult;
-        try {
-            searchResult = crawl(text, area, page, onlyWithSalary, period, params);
-            if (searchResult.items().isEmpty()) {
-                searchResult = fallbackFromCache(text, page, requestedPerPage, onlyWithSalary);
-            }
-        } catch (Exception e) {
-            log.warn("HH HTML crawl failed, returning cache fallback: {}", e.getMessage());
-            searchResult = fallbackFromCache(text, page, requestedPerPage, onlyWithSalary);
+    @Value("${app.prefetch.enabled:true}")
+    private boolean prefetchEnabled;
+
+    @Value("${app.prefetch.max-pages:20}")
+    private int prefetchMaxPages;
+
+    @Value("${app.prefetch.recent-request-window-minutes:1440}")
+    private int prefetchRecentWindowMinutes;
+
+    @Value("${app.prefetch.request-delay-ms:250}")
+    private long prefetchRequestDelayMs;
+
+    public Map<String, Object> search(MultiValueMap<String, String> params) {
+        SearchCriteria criteria = normalizeCriteria(params);
+        registerProfile(criteria);
+
+        ApiSearchResult cached = loadFreshPageCache(criteria);
+        if (cached != null) {
+            return toResponse(cached);
         }
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("found", searchResult.found());
-        response.put("pages", searchResult.pages());
-        response.put("items", searchResult.items().stream().map(this::toApiItem).toList());
-        return response;
+        try {
+            ApiSearchResult live = crawlApi(criteria);
+            savePageCache(criteria, live);
+            return toResponse(live);
+        } catch (Exception e) {
+            log.warn("HH HTML crawl failed, returning cache fallback: {}", e.getMessage());
+            ApiSearchResult staleExact = loadLatestPageCache(criteria);
+            if (staleExact != null) {
+                return toResponse(staleExact);
+            }
+            return toResponse(fallbackFromVacancyCache(criteria));
+        }
+    }
+
+    public void prefetchDueProfiles() {
+        if (!prefetchEnabled) {
+            return;
+        }
+        LocalDateTime cutoff = LocalDateTime.now(HH_ZONE).minusMinutes(prefetchRecentWindowMinutes);
+        List<SearchProfile> profiles = searchProfileRepository.findByEnabledTrueAndLastRequestedAtAfterOrderByLastRequestedAtDesc(cutoff);
+        for (SearchProfile profile : profiles) {
+            prefetchProfile(profile);
+        }
     }
 
     @Transactional
-    protected SearchResult crawl(String text, String area, int page, boolean onlyWithSalary, Integer period, MultiValueMap<String, String> params) throws IOException {
-        URI uri = buildSearchUri(text, area, page, params);
+    protected void prefetchProfile(SearchProfile profile) {
+        try {
+            SearchCriteria baseCriteria = criteriaFromProfile(profile);
+            int maxPages = Math.max(1, prefetchMaxPages);
+            int discoveredPages = maxPages;
+            for (int page = 0; page < Math.min(maxPages, discoveredPages); page++) {
+                SearchCriteria pageCriteria = baseCriteria.withPage(page);
+                ApiSearchResult result = crawlApi(pageCriteria);
+                savePageCache(pageCriteria, result);
+                discoveredPages = Math.min(maxPages, Math.max(result.pages(), page + 1));
+                if (result.items().isEmpty()) {
+                    break;
+                }
+                sleepQuietly(prefetchRequestDelayMs);
+            }
+            profile.setLastPrefetchedAt(LocalDateTime.now(HH_ZONE));
+            profile.setLastSuccessAt(LocalDateTime.now(HH_ZONE));
+            profile.setFailureCount(0);
+            profile.setLastError(null);
+            searchProfileRepository.save(profile);
+        } catch (Exception e) {
+            profile.setLastPrefetchedAt(LocalDateTime.now(HH_ZONE));
+            profile.setFailureCount(profile.getFailureCount() + 1);
+            profile.setLastError(limit(e.getMessage(), 1000));
+            searchProfileRepository.save(profile);
+            log.warn("Background prefetch failed for {}: {}", profile.getCacheKey(), e.getMessage());
+        }
+    }
+
+    private ApiSearchResult crawlApi(SearchCriteria criteria) throws IOException {
+        SearchResult live = crawl(criteria);
+        List<Map<String, Object>> items = live.items().stream().map(this::toApiItem).toList();
+        return new ApiSearchResult(live.found(), live.pages(), items);
+    }
+
+    @Transactional
+    protected SearchResult crawl(SearchCriteria criteria) throws IOException {
+        URI uri = buildSearchUri(criteria);
         log.info("HH parser request URL: {}", uri);
 
         Document document = Jsoup.connect(uri.toString())
@@ -114,67 +188,166 @@ public class HhVacancySearchService {
                 .get();
 
         List<ScrapedVacancy> parsedItems = parseCards(document);
-        if (onlyWithSalary) {
+        if (criteria.onlyWithSalary()) {
             parsedItems = parsedItems.stream().filter(item -> item.getSalaryFrom() != null || item.getSalaryTo() != null).toList();
         }
-        if (period != null && period > 0) {
-            LocalDateTime cutoff = LocalDateTime.now(HH_ZONE).minusDays(period);
+        if (criteria.period() != null && criteria.period() > 0) {
+            LocalDateTime cutoff = LocalDateTime.now(HH_ZONE).minusDays(criteria.period());
             parsedItems = parsedItems.stream().filter(item -> item.getPublishedAt() == null || !item.getPublishedAt().isBefore(cutoff)).toList();
         }
 
         List<ScrapedVacancy> persisted = upsert(parsedItems);
         long found = parseFound(document).orElse((long) persisted.size());
         int actualPageSize = Math.max(persisted.size(), 1);
-        int pages = found > 0 ? (int) Math.ceil((double) found / actualPageSize) : (persisted.isEmpty() ? 0 : page + 1);
+        int pages = found > 0 ? (int) Math.ceil((double) found / actualPageSize) : (persisted.isEmpty() ? 0 : criteria.page() + 1);
         return new SearchResult(found, pages, persisted);
     }
 
-    private URI buildSearchUri(String text, String area, int page, MultiValueMap<String, String> params) {
+    private void registerProfile(SearchCriteria criteria) {
+        try {
+            SearchProfile profile = searchProfileRepository.findByCacheKey(criteria.cacheKey()).orElseGet(SearchProfile::new);
+            profile.setCacheKey(criteria.cacheKey());
+            profile.setParamsJson(objectMapper.writeValueAsString(criteria.paramsForStorage()));
+            profile.setQueryText(criteria.text());
+            profile.setAreas(String.join(",", criteria.areas()));
+            profile.setEnabled(true);
+            profile.setLastRequestedAt(LocalDateTime.now(HH_ZONE));
+            searchProfileRepository.save(profile);
+        } catch (Exception e) {
+            log.warn("Failed to register parser profile {}: {}", criteria.cacheKey(), e.getMessage());
+        }
+    }
+
+    private ApiSearchResult loadFreshPageCache(SearchCriteria criteria) {
+        ApiSearchResult cached = loadLatestPageCache(criteria);
+        if (cached == null) {
+            return null;
+        }
+        LocalDateTime cutoff = LocalDateTime.now(HH_ZONE).minusMinutes(cacheTtlMinutes);
+        Optional<SearchPageCache> pageCache = searchPageCacheRepository.findFirstByCacheKeyAndPageNumberOrderByFetchedAtDesc(criteria.cacheKey(), criteria.page());
+        if (pageCache.isPresent() && !pageCache.get().getFetchedAt().isBefore(cutoff)) {
+            return cached;
+        }
+        return null;
+    }
+
+    private ApiSearchResult loadLatestPageCache(SearchCriteria criteria) {
+        try {
+            Optional<SearchPageCache> cache = searchPageCacheRepository.findFirstByCacheKeyAndPageNumberOrderByFetchedAtDesc(criteria.cacheKey(), criteria.page());
+            if (cache.isEmpty()) {
+                return null;
+            }
+            List<Map<String, Object>> items = objectMapper.readValue(cache.get().getItemsJson(), ITEM_LIST_TYPE);
+            return new ApiSearchResult(cache.get().getFoundCount(), cache.get().getPagesCount(), items);
+        } catch (Exception e) {
+            log.warn("Failed to load page cache {} page {}: {}", criteria.cacheKey(), criteria.page(), e.getMessage());
+            return null;
+        }
+    }
+
+    @Transactional
+    protected void savePageCache(SearchCriteria criteria, ApiSearchResult result) {
+        try {
+            SearchPageCache cache = searchPageCacheRepository.findFirstByCacheKeyAndPageNumberOrderByFetchedAtDesc(criteria.cacheKey(), criteria.page()).orElseGet(SearchPageCache::new);
+            cache.setCacheKey(criteria.cacheKey());
+            cache.setPageNumber(criteria.page());
+            cache.setFoundCount(result.found());
+            cache.setPagesCount(result.pages());
+            cache.setItemsJson(objectMapper.writeValueAsString(result.items()));
+            cache.setItemCount(result.items().size());
+            cache.setFetchedAt(LocalDateTime.now(HH_ZONE));
+            searchPageCacheRepository.save(cache);
+            searchPageCacheRepository.deleteByCacheKeyAndFetchedAtBefore(criteria.cacheKey(), LocalDateTime.now(HH_ZONE).minus(Duration.ofDays(2)));
+        } catch (Exception e) {
+            log.warn("Failed to save page cache {} page {}: {}", criteria.cacheKey(), criteria.page(), e.getMessage());
+        }
+    }
+
+    private ApiSearchResult fallbackFromVacancyCache(SearchCriteria criteria) {
+        PageRequest pageRequest = PageRequest.of(Math.max(criteria.page(), 0), criteria.requestedPerPage());
+        Page<ScrapedVacancy> cachedPage = criteria.text() == null
+                ? scrapedVacancyRepository.findAllByOrderByPublishedAtDesc(pageRequest)
+                : scrapedVacancyRepository.findByTitleContainingIgnoreCaseOrEmployerNameContainingIgnoreCaseOrderByPublishedAtDesc(criteria.text(), criteria.text(), pageRequest);
+        List<ScrapedVacancy> items = cachedPage.getContent();
+        if (criteria.onlyWithSalary()) {
+            items = items.stream().filter(item -> item.getSalaryFrom() != null || item.getSalaryTo() != null).toList();
+        }
+        return new ApiSearchResult(cachedPage.getTotalElements(), cachedPage.getTotalPages(), items.stream().map(this::toApiItem).toList());
+    }
+
+    private SearchCriteria criteriaFromProfile(SearchProfile profile) throws IOException {
+        Map<String, List<String>> paramsMap = objectMapper.readValue(profile.getParamsJson(), PARAMS_TYPE);
+        LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        paramsMap.forEach((k, v) -> params.put(k, new ArrayList<>(v)));
+        return normalizeCriteria(params);
+    }
+
+    private SearchCriteria normalizeCriteria(MultiValueMap<String, String> params) {
+        String text = normalizeBlank(params.getFirst("text"));
+        int page = Math.max(parseInt(params.getFirst("page"), 0), 0);
+        int requestedPerPage = clamp(parseInt(params.getFirst("per_page"), 20), 1, 100);
+        boolean onlyWithSalary = Boolean.parseBoolean(Optional.ofNullable(params.getFirst("only_with_salary")).orElse("false"));
+        Integer period = parseNullableInt(params.getFirst("period"));
+        String searchField = normalizeBlank(params.getFirst("search_field"));
+        if (searchField == null) {
+            searchField = "name";
+        }
+        List<String> areas = normalizeList(params.get("area"));
+        if (areas.isEmpty()) {
+            areas = resolveAreasFromCountries(params);
+        }
+        List<String> professionalRoles = normalizeList(params.get("professional_role"));
+        List<String> schedules = normalizeList(params.get("schedule"));
+        List<String> workFormats = normalizeList(params.get("work_format"));
+
+        Map<String, List<String>> paramsForStorage = new TreeMap<>();
+        putIfNotEmpty(paramsForStorage, "text", text == null ? List.of() : List.of(text));
+        putIfNotEmpty(paramsForStorage, "area", areas);
+        putIfNotEmpty(paramsForStorage, "professional_role", professionalRoles);
+        putIfNotEmpty(paramsForStorage, "schedule", schedules);
+        putIfNotEmpty(paramsForStorage, "work_format", workFormats);
+        putIfNotEmpty(paramsForStorage, "search_field", List.of(searchField));
+        putIfNotEmpty(paramsForStorage, "only_with_salary", List.of(Boolean.toString(onlyWithSalary)));
+        if (period != null) {
+            putIfNotEmpty(paramsForStorage, "period", List.of(Integer.toString(period)));
+        }
+
+        String cacheKey = buildCacheKey(text, areas, professionalRoles, schedules, workFormats, searchField, onlyWithSalary, period);
+        return new SearchCriteria(text, areas, page, requestedPerPage, onlyWithSalary, period, searchField, professionalRoles, schedules, workFormats, cacheKey, paramsForStorage);
+    }
+
+    private URI buildSearchUri(SearchCriteria criteria) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(searchUrl)
-                .queryParam("page", Math.max(page, 0))
+                .queryParam("page", criteria.page())
                 .queryParam("enable_snippets", true)
-                .queryParam("search_field", normalizeBlank(params.getFirst("search_field")) != null ? params.getFirst("search_field") : "name");
-        if (text != null) {
-            builder.queryParam("text", text);
+                .queryParam("search_field", criteria.searchField());
+        if (criteria.text() != null) {
+            builder.queryParam("text", criteria.text());
         }
-        String resolvedArea = resolveArea(area, params);
-        if (resolvedArea != null) {
-            builder.queryParam("area", resolvedArea);
-        }
-        List<String> professionalRoles = params.get("professional_role");
-        if (professionalRoles != null) {
-            professionalRoles.stream().map(this::normalizeBlank).filter(Objects::nonNull).forEach(role -> builder.queryParam("professional_role", role));
-        }
-        List<String> schedules = params.get("schedule");
-        if (schedules != null) {
-            schedules.stream().map(this::normalizeBlank).filter(Objects::nonNull).forEach(schedule -> builder.queryParam("schedule", schedule));
-        }
-        List<String> workFormats = params.get("work_format");
-        if (workFormats != null) {
-            workFormats.stream().map(this::normalizeBlank).filter(Objects::nonNull).forEach(format -> builder.queryParam("work_format", format));
-        }
+        criteria.areas().forEach(area -> builder.queryParam("area", area));
+        criteria.professionalRoles().forEach(role -> builder.queryParam("professional_role", role));
+        criteria.schedules().forEach(schedule -> builder.queryParam("schedule", schedule));
+        criteria.workFormats().forEach(format -> builder.queryParam("work_format", format));
         return builder.build().encode(StandardCharsets.UTF_8).toUri();
     }
 
-    private String resolveArea(String area, MultiValueMap<String, String> params) {
-        if (area != null) {
-            return area;
-        }
+    private List<String> resolveAreasFromCountries(MultiValueMap<String, String> params) {
         List<String> countries = params.get("country");
-        if (countries == null) {
+        if (countries == null || countries.isEmpty()) {
             countries = params.get("countries");
         }
-        if (countries == null) {
-            return null;
+        if (countries == null || countries.isEmpty()) {
+            return List.of();
         }
         String joined = String.join(",", countries).toLowerCase(Locale.ROOT);
+        List<String> result = new ArrayList<>();
         if (joined.contains("russia") || joined.contains("рос")) {
-            return defaultAreaRussia;
+            result.add(defaultAreaRussia);
         }
         if (joined.contains("belarus") || joined.contains("бел")) {
-            return defaultAreaBelarus;
+            result.add(defaultAreaBelarus);
         }
-        return null;
+        return result;
     }
 
     private List<ScrapedVacancy> parseCards(Document document) {
@@ -288,18 +461,6 @@ public class HhVacancySearchService {
         target.setLastSeenAt(parsed.getLastSeenAt());
     }
 
-    private SearchResult fallbackFromCache(String text, int page, int perPage, boolean onlyWithSalary) {
-        PageRequest pageRequest = PageRequest.of(Math.max(page, 0), perPage);
-        Page<ScrapedVacancy> cachedPage = text == null
-                ? scrapedVacancyRepository.findAllByOrderByPublishedAtDesc(pageRequest)
-                : scrapedVacancyRepository.findByTitleContainingIgnoreCaseOrEmployerNameContainingIgnoreCaseOrderByPublishedAtDesc(text, text, pageRequest);
-        List<ScrapedVacancy> items = cachedPage.getContent();
-        if (onlyWithSalary) {
-            items = items.stream().filter(item -> item.getSalaryFrom() != null || item.getSalaryTo() != null).toList();
-        }
-        return new SearchResult(cachedPage.getTotalElements(), cachedPage.getTotalPages(), items);
-    }
-
     private Optional<Long> parseFound(Document document) {
         List<String> selectors = List.of("[data-qa='vacancies-search-header']", "[data-qa='vacancies-total-found']", ".bloko-header-section-2");
         for (String selector : selectors) {
@@ -356,9 +517,56 @@ public class HhVacancySearchService {
         return map;
     }
 
+    private Map<String, Object> toResponse(ApiSearchResult result) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("found", result.found());
+        response.put("pages", result.pages());
+        response.put("items", result.items());
+        return response;
+    }
+
     private String formatPublishedAt(LocalDateTime publishedAt) {
         LocalDateTime value = publishedAt != null ? publishedAt : LocalDateTime.now(HH_ZONE);
         return value.atZone(HH_ZONE).format(HH_DATE_FORMATTER);
+    }
+
+    private String buildCacheKey(String text, List<String> areas, List<String> roles, List<String> schedules, List<String> workFormats,
+                                 String searchField, boolean onlyWithSalary, Integer period) {
+        return String.join("|",
+                "text=" + Optional.ofNullable(text).orElse(""),
+                "areas=" + String.join(",", areas),
+                "roles=" + String.join(",", roles),
+                "schedules=" + String.join(",", schedules),
+                "workFormats=" + String.join(",", workFormats),
+                "searchField=" + searchField,
+                "onlyWithSalary=" + onlyWithSalary,
+                "period=" + Optional.ofNullable(period).map(String::valueOf).orElse("")
+        );
+    }
+
+    private void putIfNotEmpty(Map<String, List<String>> target, String key, Collection<String> values) {
+        List<String> cleaned = values.stream().filter(Objects::nonNull).map(this::normalizeBlank).filter(Objects::nonNull).toList();
+        if (!cleaned.isEmpty()) {
+            target.put(key, cleaned);
+        }
+    }
+
+    private List<String> normalizeList(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return values.stream().map(this::normalizeBlank).filter(Objects::nonNull).distinct().toList();
+    }
+
+    private void sleepQuietly(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void applySalary(ScrapedVacancy vacancy, String salaryText) {
@@ -505,5 +713,27 @@ public class HhVacancySearchService {
 
     private record SearchResult(long found, int pages, List<ScrapedVacancy> items) {
     }
-}
 
+    private record ApiSearchResult(long found, int pages, List<Map<String, Object>> items) {
+    }
+
+    private record SearchCriteria(
+            String text,
+            List<String> areas,
+            int page,
+            int requestedPerPage,
+            boolean onlyWithSalary,
+            Integer period,
+            String searchField,
+            List<String> professionalRoles,
+            List<String> schedules,
+            List<String> workFormats,
+            String cacheKey,
+            Map<String, List<String>> paramsForStorage
+    ) {
+        private SearchCriteria withPage(int nextPage) {
+            return new SearchCriteria(text, areas, nextPage, requestedPerPage, onlyWithSalary, period, searchField,
+                    professionalRoles, schedules, workFormats, cacheKey, paramsForStorage);
+        }
+    }
+}

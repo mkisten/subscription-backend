@@ -1,4 +1,4 @@
-﻿server:
+server:
   port: ${SERVER_PORT:8084}
   servlet:
     context-path: /api
@@ -34,6 +34,15 @@ app:
     user-agent: ${HH_USER_AGENT:Mozilla/5.0 (compatible; SubscriptionVacancyParser/1.0; +https://subscriptionhhapp.ru)}
     default-area-russia: 113
     default-area-belarus: 16
+  cache:
+    ttl-minutes: ${HH_CACHE_TTL_MINUTES:30}
+  prefetch:
+    enabled: ${HH_PREFETCH_ENABLED:true}
+    fixed-delay-ms: ${HH_PREFETCH_DELAY_MS:300000}
+    initial-delay-ms: ${HH_PREFETCH_INITIAL_DELAY_MS:120000}
+    max-pages: ${HH_PREFETCH_MAX_PAGES:20}
+    recent-request-window-minutes: ${HH_PREFETCH_ACTIVE_WINDOW_MINUTES:1440}
+    request-delay-ms: ${HH_PREFETCH_REQUEST_DELAY_MS:250}
 
 logging:
   level:
