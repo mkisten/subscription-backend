@@ -1,4 +1,4 @@
-server:
+﻿server:
   port: 8080
   servlet:
     context-path: /api
@@ -28,21 +28,19 @@ spring:
     time-zone: UTC
     date-format: yyyy-MM-dd HH:mm:ss
 
-# ↓↓↓ ВАЖНО ДЛЯ ПРОКСИРОВАНИЯ АВТОРИЗАЦИИ ↓↓↓
 auth:
   service:
     url: ${AUTH_SERVICE_URL:https://api.subscriptionhhapp.ru}
 
 app:
   hhru:
-    base-url: https://api.hh.ru
+    base-url: ${HH_BASE_URL:https://api.hh.ru}
     timeout: 10000
     requests-per-second: 10
   auto-update:
     workers: 1
 
 logging:
-
   level:
     com.mkisten.vacancybackend: DEBUG
     org.hibernate.SQL: DEBUG

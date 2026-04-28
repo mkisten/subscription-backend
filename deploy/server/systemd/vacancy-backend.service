@@ -1,0 +1,20 @@
+[Unit]
+Description=Vacancy Backend
+After=network.target postgresql.service hh-parser-backend.service
+Wants=network-online.target
+Requires=hh-parser-backend.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/subscription-backend/vacancy-backend
+EnvironmentFile=/etc/subscription-backend/vacancy-backend.env
+ExecStart=/bin/sh -c 'java $JAVA_OPTS -jar /opt/subscription-backend/vacancy-backend/target/vacancy-backend-1.0.0.jar'
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

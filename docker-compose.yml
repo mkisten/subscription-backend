@@ -1,4 +1,4 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
   subscription_postgres:
@@ -85,6 +85,59 @@ services:
       timeout: 10s
       retries: 3
 
+  hh_parser_postgres:
+    image: postgres:15-alpine
+    container_name: hh_parser_postgres
+    environment:
+      TZ: Europe/Moscow
+      POSTGRES_DB: ${HH_PARSER_POSTGRES_DB:-hh_parser_service}
+      POSTGRES_USER: ${HH_PARSER_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${HH_PARSER_POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5434:5432"
+    volumes:
+      - hh_parser_postgres_data:/var/lib/postgresql/data
+      - ./hh-parser-backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HH_PARSER_POSTGRES_USER:-postgres}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  hh_parser_app:
+    build:
+      context: .
+      dockerfile: hh-parser-backend/Dockerfile
+    container_name: hh_parser_backend
+    ports:
+      - "8084:8084"
+    environment:
+      - TZ=Europe/Moscow
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://hh_parser_postgres:5432/${HH_PARSER_POSTGRES_DB:-hh_parser_service}
+      - SPRING_DATASOURCE_USERNAME=${HH_PARSER_POSTGRES_USER:-postgres}
+      - SPRING_DATASOURCE_PASSWORD=${HH_PARSER_POSTGRES_PASSWORD:-postgres}
+      - SERVER_PORT=8084
+    depends_on:
+      hh_parser_postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+    restart: unless-stopped
+    logging:
+      driver: "gelf"
+      options:
+        gelf-address: "udp://${GRAYLOG_GELF_HOST:-127.0.0.1}:12201"
+        tag: "hh_parser_app"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/api/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   vacancy_app:
     build:
       context: .
@@ -109,10 +162,13 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRATION=${JWT_EXPIRATION}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-https://api.subscriptionhhapp.ru}
+      - HH_BASE_URL=${HH_BASE_URL:-http://hh_parser_app:8084/api}
       - SERVER_PORT=8081
       - SERVER_SERVLET_CONTEXT_PATH=/api
     depends_on:
       vacancy_postgres:
+        condition: service_healthy
+      hh_parser_app:
         condition: service_healthy
     networks:
       - app_network
@@ -177,6 +233,7 @@ services:
 volumes:
   subscription_postgres_data:
   vacancy_postgres_data:
+  hh_parser_postgres_data:
   graylog_mongo_data:
   graylog_opensearch_data:
 

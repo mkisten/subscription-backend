@@ -1,0 +1,19 @@
+[Unit]
+Description=HH Parser Backend
+After=network.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/subscription-backend/hh-parser-backend
+EnvironmentFile=/etc/subscription-backend/hh-parser-backend.env
+ExecStart=/bin/sh -c 'java $JAVA_OPTS -jar /opt/subscription-backend/hh-parser-backend/target/hh-parser-backend-1.0.0.jar'
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

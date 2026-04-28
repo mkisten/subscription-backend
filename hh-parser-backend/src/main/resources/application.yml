@@ -1,0 +1,40 @@
+﻿server:
+  port: ${SERVER_PORT:8084}
+  servlet:
+    context-path: /api
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5434/hh_parser_service}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  jackson:
+    time-zone: Europe/Moscow
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  hh:
+    base-url: ${HH_PUBLIC_BASE_URL:https://hh.ru}
+    search-url: ${HH_SEARCH_URL:https://hh.ru/search/vacancy}
+    timeout-ms: ${HH_TIMEOUT_MS:15000}
+    user-agent: ${HH_USER_AGENT:Mozilla/5.0 (compatible; SubscriptionVacancyParser/1.0; +https://subscriptionhhapp.ru)}
+    default-area-russia: 113
+    default-area-belarus: 16
+
+logging:
+  level:
+    com.mkisten.hhparserbackend: INFO

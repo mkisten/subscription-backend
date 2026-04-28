@@ -1,11 +1,11 @@
-﻿server:
+server:
   port: ${SERVER_PORT:8081}
   servlet:
     context-path: ${SERVER_SERVLET_CONTEXT_PATH:/api}
 
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://vacancy_postgres:5432/vacancy_service}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/vacancy_service}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -33,7 +33,7 @@ auth:
 
 app:
   hhru:
-    base-url: ${HH_BASE_URL:https://api.hh.ru}
+    base-url: ${HH_BASE_URL:http://127.0.0.1:8084/api}
     timeout: ${APP_HHRU_TIMEOUT:10000}
     requests-per-second: ${APP_HHRU_REQUESTS_PER_SECOND:10}
     max-pages: ${APP_HHRU_MAX_PAGES:20}
