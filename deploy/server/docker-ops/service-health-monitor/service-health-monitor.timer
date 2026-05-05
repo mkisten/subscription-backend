@@ -1,0 +1,12 @@
+[Unit]
+Description=Run service health monitor every minute
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=1m
+AccuracySec=15s
+Persistent=true
+Unit=service-health-monitor.service
+
+[Install]
+WantedBy=timers.target

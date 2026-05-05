@@ -84,3 +84,35 @@ curl "http://127.0.0.1:8084/api/vacancies?text=java&page=0&per_page=20"
 cd /opt/subscription-backend/deploy/server/docker-ops/subscription-telegram-proxy
 sudo bash install.sh
 ```
+
+## Docker server ops: Service health monitor with Telegram alerts
+
+Если стек развернут в Docker и нужно получать уведомления о падении сервисов и ключевых зависимостей в Telegram, используйте комплект:
+- `deploy/server/docker-ops/service-health-monitor/service-health-monitor.sh`
+- `deploy/server/docker-ops/service-health-monitor/service-health-monitor.service`
+- `deploy/server/docker-ops/service-health-monitor/service-health-monitor.timer`
+- `deploy/server/docker-ops/service-health-monitor/install.sh`
+
+Что проверяет монитор:
+- `subscription_backend` health
+- доступ к Telegram из `subscription_backend`
+- `vacancy_backend` health
+- `hh_parser_backend` health
+- реальный поисковый запрос к `hh_parser_backend`
+- `graylog` health
+- наличие GELF UDP input у `graylog`
+- `shopping_backend` health
+- доступ к Telegram из `shopping_backend`
+- `family-backend.service`
+- `redsocks`
+- `subscription-telegram-proxy.timer`
+
+Уведомления отправляются только при смене состояния `UP -> DOWN` и `DOWN -> UP`.
+Состояния хранятся в `/var/lib/service-health-monitor/*.state`.
+
+Установка на сервере:
+
+```bash
+cd /opt/subscription-backend/deploy/server/docker-ops/service-health-monitor
+sudo bash install.sh
+```
