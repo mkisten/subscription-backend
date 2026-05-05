@@ -17,12 +17,16 @@ if [[ -z ${BOT_TOKEN:-} || -z ${CHAT_ID:-} ]]; then
   exit 1
 fi
 
-SMTP_HOST=${SMTP_HOST:-mail.hosting.reg.ru}
-SMTP_PORT=${SMTP_PORT:-465}
-SMTP_USER=${SMTP_USER:-}
-SMTP_PASSWORD=${SMTP_PASSWORD:-}
-EMAIL_FROM=${EMAIL_FROM:-${SMTP_USER}}
-EMAIL_TO=${EMAIL_TO:-${EMAIL_FROM}}
+clean_value() {
+  printf '%s' "$1" | tr -d '\r' | sed 's/^ *//;s/ *$//'
+}
+
+SMTP_HOST=$(clean_value "${SMTP_HOST:-mail.hosting.reg.ru}")
+SMTP_PORT=$(clean_value "${SMTP_PORT:-465}")
+SMTP_USER=$(clean_value "${SMTP_USER:-}")
+SMTP_PASSWORD=$(clean_value "${SMTP_PASSWORD:-}")
+EMAIL_FROM=$(clean_value "${EMAIL_FROM:-${SMTP_USER}}")
+EMAIL_TO=$(printf '%s' "${EMAIL_TO:-${EMAIL_FROM}}" | tr -d '\r')
 
 extract_redsocks() {
   local key=$1
@@ -66,11 +70,20 @@ send_email() {
   local body=$2
   [[ -n ${SMTP_USER:-} && -n ${SMTP_PASSWORD:-} && -n ${EMAIL_FROM:-} && -n ${EMAIL_TO:-} ]]
 
+  local header_to
   local mail_file
+  local -a rcpt_args=()
+
+  header_to=$(printf '%s' "$EMAIL_TO" | tr ',' '\n' | while IFS= read -r rcpt; do rcpt=$(clean_value "$rcpt"); [[ -n "$rcpt" ]] && printf '%s\n' "$rcpt"; done | paste -sd ', ' -)
+  while IFS= read -r rcpt; do
+    rcpt=$(clean_value "$rcpt")
+    [[ -n "$rcpt" ]] && rcpt_args+=(--mail-rcpt "$rcpt")
+  done < <(printf '%s' "$EMAIL_TO" | tr ',' '\n')
+
   mail_file=$(mktemp)
   cat > "$mail_file" <<EOF
 From: ${EMAIL_FROM}
-To: ${EMAIL_TO}
+To: ${header_to}
 Subject: ${subject}
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -83,7 +96,7 @@ EOF
     --url "smtps://${SMTP_HOST}:${SMTP_PORT}" \
     --user "${SMTP_USER}:${SMTP_PASSWORD}" \
     --mail-from "${EMAIL_FROM}" \
-    --mail-rcpt "${EMAIL_TO}" \
+    ${rcpt_args[@]} \
     --upload-file "$mail_file" >/dev/null
   rm -f "$mail_file"
 }
