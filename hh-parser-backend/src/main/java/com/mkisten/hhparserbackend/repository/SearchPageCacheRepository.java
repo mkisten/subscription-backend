@@ -1,7 +1,11 @@
 package com.mkisten.hhparserbackend.repository;
 
 import com.mkisten.hhparserbackend.entity.SearchPageCache;
+import jakarta.transaction.Transactional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -10,5 +14,8 @@ public interface SearchPageCacheRepository extends JpaRepository<SearchPageCache
 
     Optional<SearchPageCache> findFirstByCacheKeyAndPageNumberOrderByFetchedAtDesc(String cacheKey, int pageNumber);
 
-    void deleteByCacheKeyAndFetchedAtBefore(String cacheKey, LocalDateTime fetchedAt);
+    @Transactional
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from SearchPageCache c where c.cacheKey = :cacheKey and c.fetchedAt < :fetchedAt")
+    int deleteExpiredByCacheKey(@Param("cacheKey") String cacheKey, @Param("fetchedAt") LocalDateTime fetchedAt);
 }

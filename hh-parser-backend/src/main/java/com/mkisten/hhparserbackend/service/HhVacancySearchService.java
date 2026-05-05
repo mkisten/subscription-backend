@@ -257,7 +257,7 @@ public class HhVacancySearchService {
             cache.setItemCount(result.items().size());
             cache.setFetchedAt(LocalDateTime.now(HH_ZONE));
             searchPageCacheRepository.save(cache);
-            searchPageCacheRepository.deleteByCacheKeyAndFetchedAtBefore(criteria.cacheKey(), LocalDateTime.now(HH_ZONE).minus(Duration.ofDays(2)));
+            searchPageCacheRepository.deleteExpiredByCacheKey(criteria.cacheKey(), LocalDateTime.now(HH_ZONE).minus(Duration.ofDays(2)));
         } catch (Exception e) {
             log.warn("Failed to save page cache {} page {}: {}", criteria.cacheKey(), criteria.page(), e.getMessage());
         }
