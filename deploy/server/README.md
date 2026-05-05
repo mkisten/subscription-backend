@@ -64,3 +64,23 @@ sudo systemctl status vacancy-backend --no-pager
 curl http://127.0.0.1:8084/api/actuator/health
 curl "http://127.0.0.1:8084/api/vacancies?text=java&page=0&per_page=20"
 ```
+## Docker server ops: Telegram proxy for `subscription_backend`
+
+Если `subscription_backend` развернут в Docker и должен ходить в Telegram через `redsocks`, используйте комплект:
+- `deploy/server/docker-ops/subscription-telegram-proxy/subscription-telegram-proxy.sh`
+- `deploy/server/docker-ops/subscription-telegram-proxy/subscription-telegram-proxy.service`
+- `deploy/server/docker-ops/subscription-telegram-proxy/subscription-telegram-proxy.timer`
+- `deploy/server/docker-ops/subscription-telegram-proxy/install.sh`
+
+Этот вариант защищает от проблемы после reboot или recreate контейнера:
+- не использует захардкоженный container IP
+- ждёт появления `subscription_backend` после boot
+- чистит старые `iptables`-правила перед установкой нового redirect
+- периодически переустанавливает маршрут через `systemd timer`
+
+Установка на сервере:
+
+```bash
+cd /opt/subscription-backend/deploy/server/docker-ops/subscription-telegram-proxy
+sudo bash install.sh
+```

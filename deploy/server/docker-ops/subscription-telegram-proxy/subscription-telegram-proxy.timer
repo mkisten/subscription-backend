@@ -1,0 +1,12 @@
+﻿[Unit]
+Description=Refresh Telegram IP routing for subscription_backend
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=5m
+AccuracySec=15s
+Persistent=true
+Unit=subscription-telegram-proxy.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+﻿[Unit]
+Description=Apply Telegram proxy routing for subscription_backend
+After=network-online.target docker.service redsocks.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/subscription-telegram-proxy.sh
+
+[Install]
+WantedBy=multi-user.target
