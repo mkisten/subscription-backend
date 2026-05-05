@@ -54,6 +54,24 @@ send_telegram() {
     -d disable_web_page_preview=true >/dev/null
 }
 
+human_service_name() {
+  case "$1" in
+    subscription_backend) echo 'Сервис подписок' ;;
+    subscription_backend_telegram) echo 'Сервис подписок: доступ к Telegram' ;;
+    vacancy_backend) echo 'Сервис вакансий' ;;
+    hh_parser_backend) echo 'Парсер вакансий HH' ;;
+    hh_parser_backend_search) echo 'Парсер вакансий HH: поиск' ;;
+    graylog) echo 'Graylog' ;;
+    graylog_gelf_input) echo 'Graylog: GELF input' ;;
+    shopping_backend) echo 'Сервис покупок' ;;
+    shopping_backend_telegram) echo 'Сервис покупок: доступ к Telegram' ;;
+    family-backend.service) echo 'Family backend' ;;
+    redsocks) echo 'Прокси redsocks' ;;
+    subscription-telegram-proxy.timer) echo 'Таймер проксирования Telegram для сервиса подписок' ;;
+    *) echo "$1" ;;
+  esac
+}
+
 report_state() {
   local key=$1
   local current=$2
@@ -68,13 +86,23 @@ report_state() {
   local previous
   previous=$(cat "$state_file" 2>/dev/null || echo unknown)
   if [[ "$previous" != "$current" ]]; then
-    local host message
+    local host service_name status_text message
     host=$(hostname)
+    service_name=$(human_service_name "$key")
     if [[ "$current" == "UP" ]]; then
-      message="[RECOVERED][$host] $key - $detail"
+      status_text='Восстановлено'
     else
-      message="[DOWN][$host] $key - $detail"
+      status_text='Проблема'
     fi
+    message=$(cat <<EOF
+$status_text
+Сервер: $host
+Сервис: $service_name
+Детали: $detail
+Предыдущее состояние: $previous
+Текущее состояние: $current
+EOF
+)
     send_telegram "$message"
     printf '%s\n' "$current" > "$state_file"
   fi
@@ -132,38 +160,38 @@ run_check() {
   fi
 }
 
-run_check 'subscription_backend' 'HTTP 200 on :8080/actuator/health' 'No HTTP 200 on :8080/actuator/health' \
+run_check 'subscription_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8080.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8080.' \
   check_http 'http://127.0.0.1:8080/actuator/health'
 
-run_check 'subscription_backend_telegram' 'Telegram reachable from subscription container' 'Telegram is not reachable from subscription container' \
+run_check 'subscription_backend_telegram' 'Telegram доступен из контейнера сервиса подписок.' 'Telegram недоступен из контейнера сервиса подписок.' \
   check_container_http_code 'subscription_backend' 'https://api.telegram.org'
 
-run_check 'vacancy_backend' 'HTTP 200 on :8081/api/actuator/health' 'No HTTP 200 on :8081/api/actuator/health' \
+run_check 'vacancy_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8081.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8081.' \
   check_http 'http://127.0.0.1:8081/api/actuator/health'
 
-run_check 'hh_parser_backend' 'HTTP 200 on :8084/api/actuator/health' 'No HTTP 200 on :8084/api/actuator/health' \
+run_check 'hh_parser_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8084.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8084.' \
   check_http 'http://127.0.0.1:8084/api/actuator/health'
 
-run_check 'hh_parser_backend_search' 'Parser returns vacancy JSON' 'Parser does not return vacancy JSON' \
+run_check 'hh_parser_backend_search' 'Парсер возвращает JSON с вакансиями.' 'Парсер не возвращает JSON с вакансиями.' \
   check_http_json_contains 'http://127.0.0.1:8084/api/vacancies?text=java&area=113&page=0&per_page=1&search_field=name' '"items"'
 
-run_check 'graylog' 'HTTP 200 on :9000/api/' 'No HTTP 200 on :9000/api/' \
+run_check 'graylog' 'HTTP API Graylog отвечает кодом 200.' 'HTTP API Graylog не отвечает кодом 200.' \
   check_http 'http://127.0.0.1:9000/api/'
 
-run_check 'graylog_gelf_input' 'Graylog GELF UDP input is listening on 12201/udp' 'Graylog GELF UDP input is not listening on 12201/udp' \
+run_check 'graylog_gelf_input' 'GELF UDP input слушает порт 12201.' 'GELF UDP input не слушает порт 12201.' \
   check_graylog_gelf_listener
 
-run_check 'shopping_backend' 'Docker container running and healthy' 'Docker container is not running/healthy' \
+run_check 'shopping_backend' 'Docker-контейнер запущен и healthy.' 'Docker-контейнер не запущен или не healthy.' \
   check_docker_health 'shopping_backend'
 
-run_check 'shopping_backend_telegram' 'Telegram reachable from shopping container' 'Telegram is not reachable from shopping container' \
+run_check 'shopping_backend_telegram' 'Telegram доступен из контейнера сервиса покупок.' 'Telegram недоступен из контейнера сервиса покупок.' \
   check_container_http_code 'shopping_backend' 'https://api.telegram.org'
 
-run_check 'family-backend.service' 'systemd unit is active' 'systemd unit is not active' \
+run_check 'family-backend.service' 'systemd-юнит активен.' 'systemd-юнит неактивен.' \
   check_systemd_active 'family-backend.service'
 
-run_check 'redsocks' 'systemd unit is active' 'systemd unit is not active' \
+run_check 'redsocks' 'systemd-юнит активен.' 'systemd-юнит неактивен.' \
   check_systemd_active 'redsocks'
 
-run_check 'subscription-telegram-proxy.timer' 'systemd timer is active' 'systemd timer is not active' \
+run_check 'subscription-telegram-proxy.timer' 'systemd-таймер активен.' 'systemd-таймер неактивен.' \
   check_systemd_active 'subscription-telegram-proxy.timer'
