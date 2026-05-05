@@ -111,7 +111,7 @@ sudo bash install.sh
 
 Уведомления отправляются только при смене состояния `UP -> DOWN` и `DOWN -> UP`.
 Состояния хранятся в `/var/lib/service-health-monitor/*.state`.
-SMTP-настройки задаются через `/etc/service-health-monitor.env`.
+SMTP-настройки задаются через `/etc/service-health-monitor.env`. В `EMAIL_TO` можно указать несколько адресов через запятую.
 
 Установка на сервере:
 
