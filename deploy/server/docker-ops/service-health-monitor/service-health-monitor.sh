@@ -17,6 +17,13 @@ if [[ -z ${BOT_TOKEN:-} || -z ${CHAT_ID:-} ]]; then
   exit 1
 fi
 
+SMTP_HOST=${SMTP_HOST:-mail.hosting.reg.ru}
+SMTP_PORT=${SMTP_PORT:-465}
+SMTP_USER=${SMTP_USER:-}
+SMTP_PASSWORD=${SMTP_PASSWORD:-}
+EMAIL_FROM=${EMAIL_FROM:-${SMTP_USER}}
+EMAIL_TO=${EMAIL_TO:-${EMAIL_FROM}}
+
 extract_redsocks() {
   local key=$1
   awk -F'=' -v wanted="$key" '
@@ -54,6 +61,49 @@ send_telegram() {
     -d disable_web_page_preview=true >/dev/null
 }
 
+send_email() {
+  local subject=$1
+  local body=$2
+  [[ -n ${SMTP_USER:-} && -n ${SMTP_PASSWORD:-} && -n ${EMAIL_FROM:-} && -n ${EMAIL_TO:-} ]]
+
+  local mail_file
+  mail_file=$(mktemp)
+  cat > "$mail_file" <<EOF
+From: ${EMAIL_FROM}
+To: ${EMAIL_TO}
+Subject: ${subject}
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+${body}
+EOF
+
+  curl --silent --show-error --fail --ssl-reqd --max-time 30 \
+    --url "smtps://${SMTP_HOST}:${SMTP_PORT}" \
+    --user "${SMTP_USER}:${SMTP_PASSWORD}" \
+    --mail-from "${EMAIL_FROM}" \
+    --mail-rcpt "${EMAIL_TO}" \
+    --upload-file "$mail_file" >/dev/null
+  rm -f "$mail_file"
+}
+
+send_notification() {
+  local subject=$1
+  local body=$2
+  local ok=1
+
+  if send_telegram "$body"; then
+    ok=0
+  fi
+
+  if send_email "$subject" "$body"; then
+    ok=0
+  fi
+
+  return $ok
+}
+
 human_service_name() {
   case "$1" in
     subscription_backend) echo 'Сервис подписок' ;;
@@ -86,7 +136,7 @@ report_state() {
   local previous
   previous=$(cat "$state_file" 2>/dev/null || echo unknown)
   if [[ "$previous" != "$current" ]]; then
-    local host service_name status_text message
+    local host service_name status_text subject message
     host=$(hostname)
     service_name=$(human_service_name "$key")
     if [[ "$current" == "UP" ]]; then
@@ -94,6 +144,7 @@ report_state() {
     else
       status_text='Проблема'
     fi
+    subject="[$host] $status_text: $service_name"
     message=$(cat <<EOF
 $status_text
 Сервер: $host
@@ -103,7 +154,7 @@ $status_text
 Текущее состояние: $current
 EOF
 )
-    send_telegram "$message"
+    send_notification "$subject" "$message"
     printf '%s\n' "$current" > "$state_file"
   fi
 }

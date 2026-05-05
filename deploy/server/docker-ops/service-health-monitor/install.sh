@@ -7,6 +7,11 @@ install -m 0755 "$SRC_DIR/service-health-monitor.sh" /usr/local/sbin/service-hea
 install -m 0644 "$SRC_DIR/service-health-monitor.service" /etc/systemd/system/service-health-monitor.service
 install -m 0644 "$SRC_DIR/service-health-monitor.timer" /etc/systemd/system/service-health-monitor.timer
 install -d -m 0755 /var/lib/service-health-monitor
+if [[ -f "$SRC_DIR/service-health-monitor.env" ]]; then
+  install -m 0600 "$SRC_DIR/service-health-monitor.env" /etc/service-health-monitor.env
+elif [[ -f "$SRC_DIR/service-health-monitor.env.example" && ! -f /etc/service-health-monitor.env ]]; then
+  install -m 0600 "$SRC_DIR/service-health-monitor.env.example" /etc/service-health-monitor.env
+fi
 
 systemctl daemon-reload
 systemctl enable --now service-health-monitor.timer

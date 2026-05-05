@@ -4,5 +4,6 @@ After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
+EnvironmentFile=-/etc/service-health-monitor.env
 Type=oneshot
 ExecStart=/usr/local/sbin/service-health-monitor.sh

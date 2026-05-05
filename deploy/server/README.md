@@ -64,6 +64,7 @@ sudo systemctl status vacancy-backend --no-pager
 curl http://127.0.0.1:8084/api/actuator/health
 curl "http://127.0.0.1:8084/api/vacancies?text=java&page=0&per_page=20"
 ```
+
 ## Docker server ops: Telegram proxy for `subscription_backend`
 
 Если `subscription_backend` развернут в Docker и должен ходить в Telegram через `redsocks`, используйте комплект:
@@ -87,10 +88,11 @@ sudo bash install.sh
 
 ## Docker server ops: Service health monitor with Telegram alerts
 
-Если стек развернут в Docker и нужно получать уведомления о падении сервисов и ключевых зависимостей в Telegram, используйте комплект:
+Если стек развернут в Docker и нужно получать уведомления о падении сервисов и ключевых зависимостей в Telegram и по email, используйте комплект:
 - `deploy/server/docker-ops/service-health-monitor/service-health-monitor.sh`
 - `deploy/server/docker-ops/service-health-monitor/service-health-monitor.service`
 - `deploy/server/docker-ops/service-health-monitor/service-health-monitor.timer`
+- `deploy/server/docker-ops/service-health-monitor/service-health-monitor.env.example`
 - `deploy/server/docker-ops/service-health-monitor/install.sh`
 
 Что проверяет монитор:
@@ -109,10 +111,12 @@ sudo bash install.sh
 
 Уведомления отправляются только при смене состояния `UP -> DOWN` и `DOWN -> UP`.
 Состояния хранятся в `/var/lib/service-health-monitor/*.state`.
+SMTP-настройки задаются через `/etc/service-health-monitor.env`.
 
 Установка на сервере:
 
 ```bash
 cd /opt/subscription-backend/deploy/server/docker-ops/service-health-monitor
+sudo cp service-health-monitor.env.example service-health-monitor.env
 sudo bash install.sh
 ```
