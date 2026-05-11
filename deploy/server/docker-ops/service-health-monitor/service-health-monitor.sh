@@ -122,6 +122,7 @@ human_service_name() {
     subscription_backend) echo 'Сервис подписок' ;;
     subscription_backend_telegram) echo 'Сервис подписок: доступ к Telegram' ;;
     vacancy_backend) echo 'Сервис вакансий' ;;
+    vacancy_backend_auth_token) echo 'Сервис вакансий: получение auth token' ;;
     hh_parser_backend) echo 'Парсер вакансий HH' ;;
     hh_parser_backend_search) echo 'Парсер вакансий HH: поиск' ;;
     graylog) echo 'Graylog' ;;
@@ -212,6 +213,14 @@ check_graylog_gelf_listener() {
   docker exec graylog sh -lc "awk 'NR>1 && \$2 ~ /:2FA9$/ {found=1} END{exit found?0:1}' /proc/net/udp /proc/net/udp6" >/dev/null 2>&1
 }
 
+check_vacancy_auth_token() {
+  local telegram_id body
+  telegram_id=$(docker exec vacancy_postgres psql -U postgres -d vacancy_service -tAc "select telegram_id from user_settings where auto_update_enabled=true order by coalesce(next_run_at, now()) asc limit 1" 2>/dev/null | tr -d '[:space:]')
+  [[ -n "${telegram_id:-}" ]] || return 1
+  body=$(docker exec vacancy_backend curl -s --fail --max-time 20 "https://api.subscriptionhhapp.ru/api/auth/token?telegramId=${telegram_id}" 2>/dev/null || true)
+  [[ -n "$body" && "$body" == *'"token":'* ]]
+}
+
 run_check() {
   local key=$1
   local ok_detail=$2
@@ -224,6 +233,31 @@ run_check() {
   fi
 }
 
+run_check_threshold() {
+  local key=$1
+  local threshold=$2
+  local ok_detail=$3
+  local down_detail=$4
+  shift 4
+
+  local fail_file="$STATE_DIR/${key}.failcount"
+  local fail_count=0
+  if [[ -f "$fail_file" ]]; then
+    fail_count=$(cat "$fail_file" 2>/dev/null || echo 0)
+  fi
+
+  if "$@"; then
+    printf '0\n' > "$fail_file"
+    report_state "$key" UP "$ok_detail"
+  else
+    fail_count=$((fail_count + 1))
+    printf '%s\n' "$fail_count" > "$fail_file"
+    if (( fail_count >= threshold )); then
+      report_state "$key" DOWN "$down_detail Сбоев подряд: $fail_count."
+    fi
+  fi
+}
+
 run_check 'subscription_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8080.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8080.' \
   check_http 'http://127.0.0.1:8080/actuator/health'
 
@@ -232,6 +266,9 @@ run_check 'subscription_backend_telegram' 'Telegram доступен из кон
 
 run_check 'vacancy_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8081.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8081.' \
   check_http 'http://127.0.0.1:8081/api/actuator/health'
+
+run_check_threshold 'vacancy_backend_auth_token' 2 'Сервис вакансий получает auth token через сервис подписок.' 'Сервис вакансий не может получить auth token через сервис подписок.' \
+  check_vacancy_auth_token
 
 run_check 'hh_parser_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8084.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8084.' \
   check_http 'http://127.0.0.1:8084/api/actuator/health'

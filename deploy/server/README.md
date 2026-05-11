@@ -99,6 +99,7 @@ sudo bash install.sh
 - `subscription_backend` health
 - доступ к Telegram из `subscription_backend`
 - `vacancy_backend` health
+- получение `auth token` сервисом вакансий через `api.subscriptionhhapp.ru/api/auth/token` (с алертом после 2 подряд сбоев)
 - `hh_parser_backend` health
 - реальный поисковый запрос к `hh_parser_backend`
 - `graylog` health
