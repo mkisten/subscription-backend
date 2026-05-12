@@ -123,6 +123,7 @@ human_service_name() {
     subscription_backend_telegram) echo 'Сервис подписок: доступ к Telegram' ;;
     vacancy_backend) echo 'Сервис вакансий' ;;
     vacancy_backend_auth_token) echo 'Сервис вакансий: получение auth token' ;;
+    vacancy_backend_unsent_queue) echo 'Сервис вакансий: очередь неотправленных' ;;
     hh_parser_backend) echo 'Парсер вакансий HH' ;;
     hh_parser_backend_search) echo 'Парсер вакансий HH: поиск' ;;
     graylog) echo 'Graylog' ;;
@@ -220,6 +221,13 @@ check_vacancy_auth_token() {
   body=$(docker exec vacancy_backend curl -s --fail --max-time 20 "https://api.subscriptionhhapp.ru/api/auth/token?telegramId=${telegram_id}" 2>/dev/null || true)
   [[ -n "$body" && "$body" == *'"token":'* ]]
 }
+check_vacancy_unsent_backlog() {
+  local count
+  count=$(docker exec vacancy_postgres psql -U postgres -d vacancy_service -tAc "select count(*) from vacancies where sent_to_telegram = false and loaded_at < now() - interval '20 minutes'" 2>/dev/null | tr -d '[:space:]')
+  [[ -n "${count:-}" ]] || return 1
+  [[ "$count" =~ ^[0-9]+$ ]] || return 1
+  (( count == 0 ))
+}
 
 run_check() {
   local key=$1
@@ -269,6 +277,9 @@ run_check 'vacancy_backend' 'HTTP health-эндпоинт отвечает ко�
 
 run_check_threshold 'vacancy_backend_auth_token' 2 'Сервис вакансий получает auth token через сервис подписок.' 'Сервис вакансий не может получить auth token через сервис подписок.' \
   check_vacancy_auth_token
+
+run_check_threshold 'vacancy_backend_unsent_queue' 2 'У сервиса вакансий нет зависшего хвоста неотправленных вакансий старше 20 минут.' 'У сервиса вакансий накапливается хвост неотправленных вакансий старше 20 минут.' \
+  check_vacancy_unsent_backlog
 
 run_check 'hh_parser_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8084.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8084.' \
   check_http 'http://127.0.0.1:8084/api/actuator/health'

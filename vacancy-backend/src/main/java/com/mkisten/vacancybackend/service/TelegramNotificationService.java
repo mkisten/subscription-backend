@@ -8,7 +8,6 @@ import com.mkisten.vacancybackend.repository.VacancyRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -42,7 +41,6 @@ public class TelegramNotificationService {
      * по maxVacanciesPerMessage, пока не закончатся все новые.
      * Использует кеш для защиты от параллелизма и дублей.
      */
-    @Transactional
     public void sendAllUnsentVacanciesToTelegram(String userToken, Long userTelegramId) {
         // Шаг 1: Загрузить все неотправленные вакансии в кеш (если кеш пуст для этого пользователя)
         List<Vacancy> unsent = vacanciesCache.get(userTelegramId, id ->
