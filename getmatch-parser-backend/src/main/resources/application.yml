@@ -1,0 +1,48 @@
+server:
+  port: ${SERVER_PORT:8086}
+  servlet:
+    context-path: /api
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5436/getmatch_parser_service}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  jackson:
+    time-zone: Europe/Moscow
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  getmatch:
+    public-base-url: ${GETMATCH_PUBLIC_BASE_URL:https://getmatch.ru}
+    api-base-url: ${GETMATCH_API_BASE_URL:https://getmatch.ru/api}
+    timeout-ms: ${GETMATCH_TIMEOUT_MS:15000}
+    user-agent: ${GETMATCH_USER_AGENT:Mozilla/5.0 (compatible; SubscriptionGetmatchParser/1.0; +https://subscriptionhhapp.ru)}
+    max-page-size: ${GETMATCH_MAX_PAGE_SIZE:100}
+  cache:
+    ttl-minutes: ${GETMATCH_CACHE_TTL_MINUTES:30}
+  prefetch:
+    enabled: ${GETMATCH_PREFETCH_ENABLED:true}
+    fixed-delay-ms: ${GETMATCH_PREFETCH_DELAY_MS:300000}
+    initial-delay-ms: ${GETMATCH_PREFETCH_INITIAL_DELAY_MS:120000}
+    max-pages: ${GETMATCH_PREFETCH_MAX_PAGES:10}
+    recent-request-window-minutes: ${GETMATCH_PREFETCH_ACTIVE_WINDOW_MINUTES:1440}
+    request-delay-ms: ${GETMATCH_PREFETCH_REQUEST_DELAY_MS:500}
+
+logging:
+  level:
+    com.mkisten.getmatchparserbackend: INFO

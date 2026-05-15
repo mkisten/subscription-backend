@@ -1,0 +1,34 @@
+server:
+  port: ${SERVER_PORT:8086}
+  servlet:
+    context-path: /api
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5436/getmatch_parser_service}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  getmatch:
+    public-base-url: ${GETMATCH_PUBLIC_BASE_URL:https://getmatch.ru}
+    api-base-url: ${GETMATCH_API_BASE_URL:https://getmatch.ru/api}
+    timeout-ms: ${GETMATCH_TIMEOUT_MS:15000}
+    user-agent: ${GETMATCH_USER_AGENT:Mozilla/5.0 (compatible; SubscriptionGetmatchParser/1.0; +https://subscriptionhhapp.ru)}
+    max-page-size: ${GETMATCH_MAX_PAGE_SIZE:100}

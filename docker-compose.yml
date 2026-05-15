@@ -134,6 +134,118 @@ services:
       retries: 3
       start_period: 60s
 
+  habr_parser_postgres:
+    image: postgres:15-alpine
+    container_name: habr_parser_postgres
+    environment:
+      TZ: Europe/Moscow
+      POSTGRES_DB: ${HABR_PARSER_POSTGRES_DB:-habr_parser_service}
+      POSTGRES_USER: ${HABR_PARSER_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${HABR_PARSER_POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - habr_parser_postgres_data:/var/lib/postgresql/data
+      - ./habr-parser-backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HABR_PARSER_POSTGRES_USER:-postgres}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  habr_parser_app:
+    build:
+      context: .
+      dockerfile: habr-parser-backend/Dockerfile
+    container_name: habr_parser_backend
+    ports:
+      - "8085:8085"
+    environment:
+      - TZ=Europe/Moscow
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://habr_parser_postgres:5432/${HABR_PARSER_POSTGRES_DB:-habr_parser_service}
+      - SPRING_DATASOURCE_USERNAME=${HABR_PARSER_POSTGRES_USER:-postgres}
+      - SPRING_DATASOURCE_PASSWORD=${HABR_PARSER_POSTGRES_PASSWORD:-postgres}
+      - SERVER_PORT=8085
+    depends_on:
+      habr_parser_postgres:
+        condition: service_healthy
+    networks:
+      app_network:
+        aliases:
+          - habr-parser-app
+    restart: unless-stopped
+    logging:
+      driver: "gelf"
+      options:
+        gelf-address: "udp://${GRAYLOG_GELF_HOST:-127.0.0.1}:12201"
+        tag: "habr_parser_app"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/api/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  getmatch_parser_postgres:
+    image: postgres:15-alpine
+    container_name: getmatch_parser_postgres
+    environment:
+      TZ: Europe/Moscow
+      POSTGRES_DB: ${GETMATCH_PARSER_POSTGRES_DB:-getmatch_parser_service}
+      POSTGRES_USER: ${GETMATCH_PARSER_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${GETMATCH_PARSER_POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - getmatch_parser_postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${GETMATCH_PARSER_POSTGRES_USER:-postgres}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  getmatch_parser_app:
+    build:
+      context: .
+      dockerfile: getmatch-parser-backend/Dockerfile
+    container_name: getmatch_parser_backend
+    ports:
+      - "8086:8086"
+    environment:
+      - TZ=Europe/Moscow
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://getmatch_parser_postgres:5432/${GETMATCH_PARSER_POSTGRES_DB:-getmatch_parser_service}
+      - SPRING_DATASOURCE_USERNAME=${GETMATCH_PARSER_POSTGRES_USER:-postgres}
+      - SPRING_DATASOURCE_PASSWORD=${GETMATCH_PARSER_POSTGRES_PASSWORD:-postgres}
+      - SERVER_PORT=8086
+      - GETMATCH_CACHE_TTL_MINUTES=${GETMATCH_CACHE_TTL_MINUTES:-30}
+      - GETMATCH_PREFETCH_ENABLED=${GETMATCH_PREFETCH_ENABLED:-true}
+      - GETMATCH_PREFETCH_DELAY_MS=${GETMATCH_PREFETCH_DELAY_MS:-300000}
+      - GETMATCH_PREFETCH_INITIAL_DELAY_MS=${GETMATCH_PREFETCH_INITIAL_DELAY_MS:-120000}
+      - GETMATCH_PREFETCH_MAX_PAGES=${GETMATCH_PREFETCH_MAX_PAGES:-10}
+      - GETMATCH_PREFETCH_ACTIVE_WINDOW_MINUTES=${GETMATCH_PREFETCH_ACTIVE_WINDOW_MINUTES:-1440}
+      - GETMATCH_PREFETCH_REQUEST_DELAY_MS=${GETMATCH_PREFETCH_REQUEST_DELAY_MS:-500}
+    depends_on:
+      getmatch_parser_postgres:
+        condition: service_healthy
+    networks:
+      app_network:
+        aliases:
+          - getmatch-parser-app
+    restart: unless-stopped
+    logging:
+      driver: "gelf"
+      options:
+        gelf-address: "udp://${GRAYLOG_GELF_HOST:-127.0.0.1}:12201"
+        tag: "getmatch_parser_app"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/api/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   vacancy_app:
     build:
       context: .
@@ -159,12 +271,20 @@ services:
       - JWT_EXPIRATION=${JWT_EXPIRATION}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-https://api.subscriptionhhapp.ru}
       - HH_BASE_URL=${HH_BASE_URL:-http://hh-parser-app:8084/api}
+      - HABR_ENABLED=${HABR_ENABLED:-true}
+      - HABR_BASE_URL=${HABR_BASE_URL:-http://habr-parser-app:8085/api}
+      - GETMATCH_ENABLED=${GETMATCH_ENABLED:-true}
+      - GETMATCH_BASE_URL=${GETMATCH_BASE_URL:-http://getmatch-parser-app:8086/api}
       - SERVER_PORT=8081
       - SERVER_SERVLET_CONTEXT_PATH=/api
     depends_on:
       vacancy_postgres:
         condition: service_healthy
       hh_parser_app:
+        condition: service_healthy
+      habr_parser_app:
+        condition: service_healthy
+      getmatch_parser_app:
         condition: service_healthy
     networks:
       - app_network
@@ -230,6 +350,8 @@ volumes:
   subscription_postgres_data:
   vacancy_postgres_data:
   hh_parser_postgres_data:
+  habr_parser_postgres_data:
+  getmatch_parser_postgres_data:
   graylog_mongo_data:
   graylog_opensearch_data:
 
