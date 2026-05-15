@@ -1,0 +1,8 @@
+[Unit]
+Description=Rotate oversized Amnezia 3proxy log
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/amnezia-3proxy-log-maintenance.sh

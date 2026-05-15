@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Amnezia 3proxy log maintenance hourly
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=1h
+Persistent=true
+Unit=amnezia-3proxy-log-maintenance.service
+
+[Install]
+WantedBy=timers.target

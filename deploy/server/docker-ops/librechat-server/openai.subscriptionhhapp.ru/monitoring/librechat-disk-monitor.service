@@ -1,0 +1,9 @@
+[Unit]
+Description=Check LibreChat host disk usage and send alerts on state changes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=-/etc/librechat-disk-monitor.env
+Type=oneshot
+ExecStart=/usr/local/sbin/librechat-disk-monitor.sh
