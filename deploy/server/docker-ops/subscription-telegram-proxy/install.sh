@@ -6,6 +6,8 @@ SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 install -m 0755 "$SRC_DIR/subscription-telegram-proxy.sh" /usr/local/sbin/subscription-telegram-proxy.sh
 install -m 0644 "$SRC_DIR/subscription-telegram-proxy.service" /etc/systemd/system/subscription-telegram-proxy.service
 install -m 0644 "$SRC_DIR/subscription-telegram-proxy.timer" /etc/systemd/system/subscription-telegram-proxy.timer
+install -d -m 0755 /etc/systemd/system/redsocks.service.d
+install -m 0644 "$SRC_DIR/redsocks-subscription-telegram-refresh.conf" /etc/systemd/system/redsocks.service.d/10-subscription-telegram-refresh.conf
 
 systemctl daemon-reload
 systemctl enable --now subscription-telegram-proxy.timer

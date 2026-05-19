@@ -78,6 +78,11 @@ curl "http://127.0.0.1:8084/api/vacancies?text=java&page=0&per_page=20"
 - ждёт появления `subscription_backend` после boot
 - чистит старые `iptables`-правила перед установкой нового redirect
 - периодически переустанавливает маршрут через `systemd timer`
+- после рестарта `redsocks` автоматически повторно применяет Telegram-routing для `subscription_backend`
+
+Важно:
+- авторизация через Telegram bot для сервиса вакансий зависит не только от `subscription_backend`, но и от рабочей связки `redsocks + subscription-telegram-proxy`
+- если маршрут до Telegram деградирует, backend может оставаться `healthy`, но `create-session` и отправка bot-сообщений начнут падать
 
 Установка на сервере:
 
@@ -98,6 +103,7 @@ sudo bash install.sh
 Что проверяет монитор:
 - `subscription_backend` health
 - доступ к Telegram из `subscription_backend`
+- создание `Telegram auth session` через `POST /api/telegram-auth/create-session`
 - `vacancy_backend` health
 - получение `auth token` сервисом вакансий через `api.subscriptionhhapp.ru/api/auth/token` (с алертом после 2 подряд сбоев)
 - `hh_parser_backend` health
@@ -113,6 +119,10 @@ sudo bash install.sh
 Уведомления отправляются только при смене состояния `UP -> DOWN` и `DOWN -> UP`.
 Состояния хранятся в `/var/lib/service-health-monitor/*.state`.
 SMTP-настройки задаются через `/etc/service-health-monitor.env`. В `EMAIL_TO` можно указать несколько адресов через запятую.
+Для Telegram-route у `subscription_backend` monitor также умеет делать self-heal:
+- `systemctl restart redsocks`
+- `systemctl start subscription-telegram-proxy.service`
+- затем повторная проверка маршрута и auth session
 
 Установка на сервере:
 

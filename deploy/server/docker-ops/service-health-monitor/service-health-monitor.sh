@@ -27,6 +27,7 @@ SMTP_USER=$(clean_value "${SMTP_USER:-}")
 SMTP_PASSWORD=$(clean_value "${SMTP_PASSWORD:-}")
 EMAIL_FROM=$(clean_value "${EMAIL_FROM:-${SMTP_USER}}")
 EMAIL_TO=$(printf '%s' "${EMAIL_TO:-${EMAIL_FROM}}" | tr -d '\r')
+TELEGRAM_ROUTE_RECOVERY_COOLDOWN_SECONDS=$(clean_value "${TELEGRAM_ROUTE_RECOVERY_COOLDOWN_SECONDS:-180}")
 
 extract_redsocks() {
   local key=$1
@@ -121,11 +122,14 @@ human_service_name() {
   case "$1" in
     subscription_backend) echo 'Сервис подписок' ;;
     subscription_backend_telegram) echo 'Сервис подписок: доступ к Telegram' ;;
+    subscription_backend_telegram_auth) echo 'Сервис подписок: создание Telegram auth session' ;;
     vacancy_backend) echo 'Сервис вакансий' ;;
     vacancy_backend_auth_token) echo 'Сервис вакансий: получение auth token' ;;
     vacancy_backend_unsent_queue) echo 'Сервис вакансий: очередь неотправленных' ;;
     hh_parser_backend) echo 'Парсер вакансий HH' ;;
     hh_parser_backend_search) echo 'Парсер вакансий HH: поиск' ;;
+    superjob_parser_backend) echo 'Парсер вакансий SuperJob' ;;
+    superjob_parser_backend_search) echo 'Парсер вакансий SuperJob: поиск' ;;
     graylog) echo 'Graylog' ;;
     graylog_gelf_input) echo 'Graylog: GELF input' ;;
     shopping_backend) echo 'Сервис покупок' ;;
@@ -214,6 +218,71 @@ check_graylog_gelf_listener() {
   docker exec graylog sh -lc "awk 'NR>1 && \$2 ~ /:2FA9$/ {found=1} END{exit found?0:1}' /proc/net/udp /proc/net/udp6" >/dev/null 2>&1
 }
 
+try_repair_subscription_telegram_route() {
+  local stamp_file="$STATE_DIR/subscription_telegram_route_repair.timestamp"
+  local now last
+  now=$(date +%s)
+  last=0
+  if [[ -f "$stamp_file" ]]; then
+    last=$(cat "$stamp_file" 2>/dev/null || echo 0)
+  fi
+  if (( now - last < TELEGRAM_ROUTE_RECOVERY_COOLDOWN_SECONDS )); then
+    return 0
+  fi
+  printf '%s\n' "$now" > "$stamp_file"
+  systemctl restart redsocks
+  systemctl start subscription-telegram-proxy.service
+  sleep 3
+}
+
+check_subscription_backend_telegram_raw() {
+  check_container_http_code 'subscription_backend' 'https://api.telegram.org'
+}
+
+check_subscription_backend_telegram() {
+  if check_subscription_backend_telegram_raw; then
+    return 0
+  fi
+  try_repair_subscription_telegram_route
+  check_subscription_backend_telegram_raw
+}
+
+check_subscription_telegram_auth_create_session_raw() {
+  local body session_id
+  body=$(curl -s --fail --max-time 20 -X POST 'http://127.0.0.1:8080/api/telegram-auth/create-session' \
+    -H 'Content-Type: application/json' \
+    -d '{"deviceId":"monitor-auth-check","serviceCode":"VACANCY"}' || true)
+  [[ -n "$body" ]] || return 1
+
+  session_id=$(BODY="$body" python3 - <<'PY'
+import json, os, sys
+try:
+    body = json.loads(os.environ["BODY"])
+except Exception:
+    sys.exit(1)
+if body.get("status") != "PENDING":
+    sys.exit(1)
+if not body.get("sessionId") or not body.get("authLink"):
+    sys.exit(1)
+print(body["sessionId"])
+PY
+  ) || return 1
+
+  docker exec -e PGPASSWORD=postgres subscription_postgres \
+    psql -U postgres -d subscription_db \
+    -c "delete from auth_sessions where session_id = '${session_id}' or device_id = 'monitor-auth-check'" >/dev/null 2>&1 || true
+
+  return 0
+}
+
+check_subscription_telegram_auth_create_session() {
+  if check_subscription_telegram_auth_create_session_raw; then
+    return 0
+  fi
+  try_repair_subscription_telegram_route
+  check_subscription_telegram_auth_create_session_raw
+}
+
 check_vacancy_auth_token() {
   local telegram_id body
   telegram_id=$(docker exec vacancy_postgres psql -U postgres -d vacancy_service -tAc "select telegram_id from user_settings where auto_update_enabled=true order by coalesce(next_run_at, now()) asc limit 1" 2>/dev/null | tr -d '[:space:]')
@@ -221,9 +290,10 @@ check_vacancy_auth_token() {
   body=$(docker exec vacancy_backend curl -s --fail --max-time 20 "https://api.subscriptionhhapp.ru/api/auth/token?telegramId=${telegram_id}" 2>/dev/null || true)
   [[ -n "$body" && "$body" == *'"token":'* ]]
 }
+
 check_vacancy_unsent_backlog() {
   local count
-  count=$(docker exec vacancy_postgres psql -U postgres -d vacancy_service -tAc "select count(*) from vacancies where sent_to_telegram = false and loaded_at < now() - interval '20 minutes'" 2>/dev/null | tr -d '[:space:]')
+  count=$(docker exec vacancy_postgres psql -U postgres -d vacancy_service -tAc "select count(*) from vacancies v join user_settings us on us.telegram_id = v.user_telegram_id where v.sent_to_telegram = false and us.telegram_notify = true and v.loaded_at < now() - interval '20 minutes'" 2>/dev/null | tr -d '[:space:]')
   [[ -n "${count:-}" ]] || return 1
   [[ "$count" =~ ^[0-9]+$ ]] || return 1
   (( count == 0 ))
@@ -269,8 +339,11 @@ run_check_threshold() {
 run_check 'subscription_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8080.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8080.' \
   check_http 'http://127.0.0.1:8080/actuator/health'
 
-run_check 'subscription_backend_telegram' 'Telegram доступен из контейнера сервиса подписок.' 'Telegram недоступен из контейнера сервиса подписок.' \
-  check_container_http_code 'subscription_backend' 'https://api.telegram.org'
+run_check_threshold 'subscription_backend_telegram' 2 'Telegram доступен из контейнера сервиса подписок.' 'Telegram недоступен из контейнера сервиса подписок.' \
+  check_subscription_backend_telegram
+
+run_check_threshold 'subscription_backend_telegram_auth' 2 'Создание Telegram auth session работает.' 'Сервис подписок не может создать Telegram auth session.' \
+  check_subscription_telegram_auth_create_session
 
 run_check 'vacancy_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8081.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8081.' \
   check_http 'http://127.0.0.1:8081/api/actuator/health'
@@ -286,6 +359,12 @@ run_check 'hh_parser_backend' 'HTTP health-эндпоинт отвечает к�
 
 run_check 'hh_parser_backend_search' 'Парсер возвращает JSON с вакансиями.' 'Парсер не возвращает JSON с вакансиями.' \
   check_http_json_contains 'http://127.0.0.1:8084/api/vacancies?text=java&area=113&page=0&per_page=1&search_field=name' '"items"'
+
+run_check 'superjob_parser_backend' 'HTTP health-эндпоинт отвечает кодом 200 на порту 8087.' 'HTTP health-эндпоинт не отвечает кодом 200 на порту 8087.' \
+  check_http 'http://127.0.0.1:8087/api/actuator/health'
+
+run_check 'superjob_parser_backend_search' 'Парсер SuperJob возвращает JSON с вакансиями.' 'Парсер SuperJob не возвращает JSON с вакансиями.' \
+  check_http_json_contains 'http://127.0.0.1:8087/api/vacancies?text=java&country=russia&town=4&page=0&per_page=1' '"items"'
 
 run_check 'graylog' 'HTTP API Graylog отвечает кодом 200.' 'HTTP API Graylog не отвечает кодом 200.' \
   check_http 'http://127.0.0.1:9000/api/'
