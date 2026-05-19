@@ -11,65 +11,59 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 @Repository
 public interface VacancyRepository extends JpaRepository<Vacancy, VacancyKey> {
 
-    // Найти все вакансии пользователя (новые сверху, затем по времени загрузки)
     List<Vacancy> findByUserTelegramIdOrderByStatusAscLoadedAtDesc(Long userTelegramId);
 
-    // Найти вакансии пользователя по статусу (по времени загрузки)
     List<Vacancy> findByUserTelegramIdAndStatusOrderByLoadedAtDesc(
             Long userTelegramId, VacancyStatus status);
 
-    // Проверка существования вакансии для пользователя
     boolean existsByIdAndUserTelegramId(String id, Long userTelegramId);
 
-    // Найти только неотправленные вакансии пользователя, отсортированные по дате
     List<Vacancy> findByUserTelegramIdAndSentToTelegramFalseOrderByPublishedAtAsc(Long userTelegramId);
 
-    // Получить id всех вакансий пользователя
+    int countByUserTelegramIdAndSentToTelegramFalse(Long userTelegramId);
+
     @Query("SELECT v.id FROM Vacancy v WHERE v.userTelegramId = :userTelegramId")
     Set<String> findVacancyIdsByUser(@Param("userTelegramId") Long userTelegramId);
 
-    // Обновить статус вакансии пользователя
+    @Transactional
     @Modifying
     @Query("UPDATE Vacancy v SET v.status = :status WHERE v.userTelegramId = :userTelegramId AND v.id = :vacancyId")
     void updateStatus(@Param("userTelegramId") Long userTelegramId,
                       @Param("vacancyId") String vacancyId,
                       @Param("status") VacancyStatus status);
 
-
-    // Обновить статус нескольких вакансий
+    @Transactional
     @Modifying
     @Query("UPDATE Vacancy v SET v.status = :status WHERE v.userTelegramId = :userTelegramId AND v.id IN :vacancyIds")
     void updateMultipleStatus(@Param("userTelegramId") Long userTelegramId,
                               @Param("vacancyIds") List<String> vacancyIds,
                               @Param("status") VacancyStatus status);
 
-    // Удалить вакансию пользователя
+    @Transactional
     @Modifying
     @Query("DELETE FROM Vacancy v WHERE v.userTelegramId = :userTelegramId AND v.id = :vacancyId")
     void deleteByUserAndId(@Param("userTelegramId") Long userTelegramId,
                            @Param("vacancyId") String vacancyId);
 
-    // Удалить все вакансии пользователя
+    @Transactional
     @Modifying
     @Query("DELETE FROM Vacancy v WHERE v.userTelegramId = :userTelegramId")
     void deleteAllByUserTelegramId(@Param("userTelegramId") Long userTelegramId);
 
-    // Считать новые вакансии пользователя
     @Query("SELECT COUNT(v) FROM Vacancy v WHERE v.userTelegramId = :userTelegramId AND v.status = 'NEW'")
     Long countNewVacancies(@Param("userTelegramId") Long userTelegramId);
 
-    // Пометить вакансии как отправленные
+    @Transactional
     @Modifying
     @Query("UPDATE Vacancy v SET v.sentToTelegram = true WHERE v.userTelegramId = :userTelegramId AND v.id IN :ids")
     int markAsSentToTelegram(@Param("userTelegramId") Long userTelegramId, @Param("ids") List<String> ids);
 
-    // Пометить вакансию как отправленную
+    @Transactional
     @Modifying
     @Query("UPDATE Vacancy v SET v.sentToTelegram = true WHERE v.userTelegramId = :userTelegramId AND v.id = :vacancyId")
     int markSingleAsSentToTelegram(@Param("userTelegramId") Long userTelegramId, @Param("vacancyId") String vacancyId);

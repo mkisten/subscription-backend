@@ -1,4 +1,4 @@
-﻿server:
+server:
   port: 8080
   servlet:
     context-path: /api
@@ -37,6 +37,20 @@ app:
     base-url: ${HH_BASE_URL:https://api.hh.ru}
     timeout: 10000
     requests-per-second: 10
+    max-pages: 20
+  habr:
+    enabled: ${HABR_ENABLED:false}
+    base-url: ${HABR_BASE_URL:http://127.0.0.1:8085/api}
+    timeout: ${APP_HABR_TIMEOUT:10000}
+    max-pages: ${APP_HABR_MAX_PAGES:10}
+  getmatch:
+    enabled: ${GETMATCH_ENABLED:false}
+    base-url: ${GETMATCH_BASE_URL:http://127.0.0.1:8086/api}
+    max-pages: ${APP_GETMATCH_MAX_PAGES:10}
+  superjob:
+    enabled: ${SUPERJOB_ENABLED:false}
+    base-url: ${SUPERJOB_BASE_URL:http://127.0.0.1:8087/api}
+    max-pages: ${APP_SUPERJOB_MAX_PAGES:10}
   auto-update:
     workers: 1
 

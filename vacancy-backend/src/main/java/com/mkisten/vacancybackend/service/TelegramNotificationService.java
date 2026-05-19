@@ -30,19 +30,12 @@ public class TelegramNotificationService {
         this.vacancyRepository = vacancyRepository;
     }
 
-    // Кеш для временного хранения неотправленных вакансий
     private final Cache<Long, List<Vacancy>> vacanciesCache = Caffeine.newBuilder()
             .expireAfterWrite(15, TimeUnit.MINUTES)
             .maximumSize(1000)
             .build();
 
-    /**
-     * Основной метод: отправить все НЕ отправленные (sentToTelegram == false) вакансии бачами
-     * по maxVacanciesPerMessage, пока не закончатся все новые.
-     * Использует кеш для защиты от параллелизма и дублей.
-     */
     public void sendAllUnsentVacanciesToTelegram(String userToken, Long userTelegramId) {
-        // Шаг 1: Загрузить все неотправленные вакансии в кеш (если кеш пуст для этого пользователя)
         List<Vacancy> unsent = vacanciesCache.get(userTelegramId, id ->
                 new ArrayList<>(vacancyRepository.findByUserTelegramIdAndSentToTelegramFalseOrderByPublishedAtAsc(id)));
 
@@ -54,7 +47,6 @@ public class TelegramNotificationService {
 
         log.info("Всего неотправленных вакансий для пользователя {}: {}", userTelegramId, unsent.size());
 
-        // Шаг 2: Отправлять бачами, пока в кеше есть элементы
         List<String> sentIds = new ArrayList<>();
         int batchNumber = 0;
 
@@ -66,29 +58,29 @@ public class TelegramNotificationService {
             try {
                 sendTextMessage(userToken, message);
                 log.info("Batch #{}: отправлено {} вакансий для user {}", batchNumber, batch.size(), userTelegramId);
-
-                // Собираем id отправленных вакансий
                 sentIds.addAll(batch.stream().map(Vacancy::getId).toList());
-                // Удаляем отправленные из кеша
                 unsent.removeAll(batch);
-
             } catch (Exception e) {
                 log.error("Ошибка отправки Telegram batch #{}: {}", batchNumber, e.getMessage());
-                break; // При ошибке не продолжаем
+                break;
             }
         }
 
-        // Шаг 3: После успешной отправки всех батчей обновляем БД одним запросом
         if (!sentIds.isEmpty()) {
-            vacancyRepository.markAsSentToTelegram(userTelegramId, sentIds);
-            log.info("Помечено отправленными в БД {} вакансий для user {}", sentIds.size(), userTelegramId);
+            int updated = vacancyRepository.markAsSentToTelegram(userTelegramId, sentIds);
+            log.info("Помечено отправленными в БД {} вакансий для user {}", updated, userTelegramId);
+            if (updated != sentIds.size()) {
+                log.warn("После отправки батчей user {}: ожидали отметить {} вакансий, но обновили только {}. Возможны повторы.", userTelegramId, sentIds.size(), updated);
+            }
+            int remainingUnsent = vacancyRepository.countByUserTelegramIdAndSentToTelegramFalse(userTelegramId);
+            if (remainingUnsent > 0) {
+                log.warn("После отправки user {} в очереди осталось {} неотправленных вакансий. Возможны повторы.", userTelegramId, remainingUnsent);
+            }
         }
 
-        // Шаг 4: Очищаем кеш для пользователя
         vacanciesCache.invalidate(userTelegramId);
     }
 
-    /** Универсальная отправка текста в Telegram */
     public void sendTextMessage(String userToken, String text) {
         try {
             authServiceClient.sendTelegramNotification(userToken, text);
@@ -99,7 +91,6 @@ public class TelegramNotificationService {
         }
     }
 
-    // Вспомогательные сервисные уведомления
     public void sendTestNotification(String userToken) {
         String message = "🧪 <b>Тестовое уведомление</b>\n\n" +
                 "Это тестовое сообщение от сервиса вакансий.\n" +
@@ -150,7 +141,6 @@ public class TelegramNotificationService {
     }
 
     private String formatSingleVacancy(Vacancy vacancy) {
-
         StringBuilder sb = new StringBuilder();
         sb.append("🎯 *").append(escapeMarkdown(vacancy.getTitle())).append("*\n");
         sb.append("🗓 *Публикация:* ").append(formatDate(vacancy.getPublishedAt())).append("\n");
@@ -158,8 +148,7 @@ public class TelegramNotificationService {
         sb.append("📍 *Город:* ").append(escapeMarkdown(vacancy.getCity() != null ? vacancy.getCity() : "Не указан")).append("\n");
         String schedule = vacancy.getSchedule() != null ? formatSchedule(vacancy.getSchedule()) : "Не указан";
         sb.append("📊 *Формат:* ").append(escapeMarkdown(schedule)).append("\n");
-        String salary = vacancy.getSalary() != null && !vacancy.getSalary().equals("Не указана") ?
-                vacancy.getSalary() : "не указана";
+        String salary = vacancy.getSalary() != null && !vacancy.getSalary().equals("Не указана") ? vacancy.getSalary() : "не указана";
         sb.append("💰 *Зарплата:* ").append(escapeMarkdown(salary)).append("\n");
         sb.append("🔗 *Ссылка:* ").append(vacancy.getUrl());
         return sb.toString();
@@ -196,7 +185,7 @@ public class TelegramNotificationService {
     private String formatSchedule(String schedule) {
         switch (schedule.toLowerCase()) {
             case "remote": return "🏠 Удаленная работа";
-            case "fullDay": return "📅 Полный день";
+            case "fullday": return "📅 Полный день";
             case "shift": return "🔄 Сменный график";
             case "flexible": return "⏰ Гибкий график";
             default: return schedule;

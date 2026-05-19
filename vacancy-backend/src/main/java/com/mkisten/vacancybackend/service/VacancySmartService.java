@@ -20,6 +20,9 @@ import java.util.Map;
 public class VacancySmartService {
     private final UserSettingsService userSettingsService;
     private final HHruApiService hhruApiService;
+    private final HabrCareerApiService habrCareerApiService;
+    private final GetmatchCareerApiService getmatchCareerApiService;
+    private final SuperjobCareerApiService superjobCareerApiService;
     private final TelegramNotificationService telegramService;
     private final VacancyService vacancyService;
 
@@ -60,7 +63,11 @@ public class VacancySmartService {
             perQuery.setExcludeKeywords(request.getExcludeKeywords());
             perQuery.setTelegramNotify(request.getTelegramNotify());
 
-            List<Vacancy> batch = hhruApiService.searchVacancies(perQuery, token);
+            List<Vacancy> batch = new ArrayList<>();
+            batch.addAll(hhruApiService.searchVacancies(perQuery, token));
+            batch.addAll(habrCareerApiService.searchVacancies(perQuery, token));
+            batch.addAll(getmatchCareerApiService.searchVacancies(perQuery, token));
+            batch.addAll(superjobCareerApiService.searchVacancies(perQuery, token));
             for (Vacancy vacancy : batch) {
                 uniqueVacancies.putIfAbsent(vacancy.getId(), vacancy);
             }

@@ -37,6 +37,19 @@ app:
     timeout: ${APP_HHRU_TIMEOUT:10000}
     requests-per-second: ${APP_HHRU_REQUESTS_PER_SECOND:10}
     max-pages: ${APP_HHRU_MAX_PAGES:20}
+  habr:
+    enabled: ${HABR_ENABLED:true}
+    base-url: ${HABR_BASE_URL:http://127.0.0.1:8085/api}
+    timeout: ${APP_HABR_TIMEOUT:10000}
+    max-pages: ${APP_HABR_MAX_PAGES:10}
+  getmatch:
+    enabled: ${GETMATCH_ENABLED:true}
+    base-url: ${GETMATCH_BASE_URL:http://127.0.0.1:8086/api}
+    max-pages: ${APP_GETMATCH_MAX_PAGES:10}
+  superjob:
+    enabled: ${SUPERJOB_ENABLED:true}
+    base-url: ${SUPERJOB_BASE_URL:http://127.0.0.1:8087/api}
+    max-pages: ${APP_SUPERJOB_MAX_PAGES:10}
   auto-update:
     workers: ${APP_AUTO_UPDATE_WORKERS:1}
 

@@ -246,6 +246,69 @@ services:
       retries: 3
       start_period: 40s
 
+  superjob_parser_postgres:
+    image: postgres:15-alpine
+    container_name: superjob_parser_postgres
+    environment:
+      TZ: Europe/Moscow
+      POSTGRES_DB: ${SUPERJOB_PARSER_POSTGRES_DB:-superjob_parser_service}
+      POSTGRES_USER: ${SUPERJOB_PARSER_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${SUPERJOB_PARSER_POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - superjob_parser_postgres_data:/var/lib/postgresql/data
+      - ./superjob-parser-backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SUPERJOB_PARSER_POSTGRES_USER:-postgres}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  superjob_parser_app:
+    build:
+      context: .
+      dockerfile: superjob-parser-backend/Dockerfile
+    container_name: superjob_parser_backend
+    ports:
+      - "8087:8087"
+    environment:
+      - TZ=Europe/Moscow
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://superjob_parser_postgres:5432/${SUPERJOB_PARSER_POSTGRES_DB:-superjob_parser_service}
+      - SPRING_DATASOURCE_USERNAME=${SUPERJOB_PARSER_POSTGRES_USER:-postgres}
+      - SPRING_DATASOURCE_PASSWORD=${SUPERJOB_PARSER_POSTGRES_PASSWORD:-postgres}
+      - SERVER_PORT=8087
+      - SUPERJOB_PUBLIC_BASE_URL=${SUPERJOB_PUBLIC_BASE_URL:-https://russia.superjob.ru}
+      - SUPERJOB_SEARCH_URL=${SUPERJOB_SEARCH_URL:-https://russia.superjob.ru/vacancy/search/}
+      - SUPERJOB_BELARUS_SEARCH_URL=${SUPERJOB_BELARUS_SEARCH_URL:-https://www.superjob.by/vacancy/search/}
+      - SUPERJOB_CACHE_TTL_MINUTES=${SUPERJOB_CACHE_TTL_MINUTES:-30}
+      - SUPERJOB_PREFETCH_ENABLED=${SUPERJOB_PREFETCH_ENABLED:-true}
+      - SUPERJOB_PREFETCH_DELAY_MS=${SUPERJOB_PREFETCH_DELAY_MS:-300000}
+      - SUPERJOB_PREFETCH_INITIAL_DELAY_MS=${SUPERJOB_PREFETCH_INITIAL_DELAY_MS:-120000}
+      - SUPERJOB_PREFETCH_MAX_PAGES=${SUPERJOB_PREFETCH_MAX_PAGES:-10}
+      - SUPERJOB_PREFETCH_ACTIVE_WINDOW_MINUTES=${SUPERJOB_PREFETCH_ACTIVE_WINDOW_MINUTES:-1440}
+      - SUPERJOB_PREFETCH_REQUEST_DELAY_MS=${SUPERJOB_PREFETCH_REQUEST_DELAY_MS:-250}
+    depends_on:
+      superjob_parser_postgres:
+        condition: service_healthy
+    networks:
+      app_network:
+        aliases:
+          - superjob-parser-app
+    restart: unless-stopped
+    logging:
+      driver: "gelf"
+      options:
+        gelf-address: "udp://${GRAYLOG_GELF_HOST:-127.0.0.1}:12201"
+        tag: "superjob_parser_app"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087/api/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   vacancy_app:
     build:
       context: .
@@ -275,6 +338,8 @@ services:
       - HABR_BASE_URL=${HABR_BASE_URL:-http://habr-parser-app:8085/api}
       - GETMATCH_ENABLED=${GETMATCH_ENABLED:-true}
       - GETMATCH_BASE_URL=${GETMATCH_BASE_URL:-http://getmatch-parser-app:8086/api}
+      - SUPERJOB_ENABLED=${SUPERJOB_ENABLED:-true}
+      - SUPERJOB_BASE_URL=${SUPERJOB_BASE_URL:-http://superjob-parser-app:8087/api}
       - SERVER_PORT=8081
       - SERVER_SERVLET_CONTEXT_PATH=/api
     depends_on:
@@ -285,6 +350,8 @@ services:
       habr_parser_app:
         condition: service_healthy
       getmatch_parser_app:
+        condition: service_healthy
+      superjob_parser_app:
         condition: service_healthy
     networks:
       - app_network
@@ -352,6 +419,7 @@ volumes:
   hh_parser_postgres_data:
   habr_parser_postgres_data:
   getmatch_parser_postgres_data:
+  superjob_parser_postgres_data:
   graylog_mongo_data:
   graylog_opensearch_data:
 

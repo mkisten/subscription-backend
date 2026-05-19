@@ -3,6 +3,7 @@ package com.mkisten.vacancybackend;
 import com.mkisten.vacancybackend.client.AuthServiceClient;
 import com.mkisten.vacancybackend.dto.ProfileResponse;
 import com.mkisten.vacancybackend.dto.SearchRequest;
+import com.mkisten.vacancybackend.dto.SubscriptionStatusResponse;
 import com.mkisten.vacancybackend.dto.TokenResponse;
 import com.mkisten.vacancybackend.entity.UserSettings;
 import com.mkisten.vacancybackend.entity.Vacancy;
@@ -11,9 +12,12 @@ import com.mkisten.vacancybackend.repository.UserSettingsRepository;
 import com.mkisten.vacancybackend.repository.VacancyRepository;
 import com.mkisten.vacancybackend.service.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -57,10 +61,21 @@ class VacancyBackendServiceTest {
     void vacancySmartServicePopulatesSettingsAndSendsNotifications() {
         UserSettingsService settingsService = mock(UserSettingsService.class);
         HHruApiService apiService = mock(HHruApiService.class);
+        HabrCareerApiService habrApiService = mock(HabrCareerApiService.class);
+        GetmatchCareerApiService getmatchApiService = mock(GetmatchCareerApiService.class);
+        SuperjobCareerApiService superjobApiService = mock(SuperjobCareerApiService.class);
         TelegramNotificationService telegramService = mock(TelegramNotificationService.class);
         VacancyService vacancyService = mock(VacancyService.class);
 
-        VacancySmartService service = new VacancySmartService(settingsService, apiService, telegramService, vacancyService);
+        VacancySmartService service = new VacancySmartService(
+                settingsService,
+                apiService,
+                habrApiService,
+                getmatchApiService,
+                superjobApiService,
+                telegramService,
+                vacancyService
+        );
 
         UserSettings settings = new UserSettings(10L);
         settings.setSearchQuery("java");
@@ -68,8 +83,12 @@ class VacancyBackendServiceTest {
         settings.setExcludeKeywords("intern");
         settings.setTelegramNotify(true);
         when(settingsService.getSettings("token")).thenReturn(settings);
+        when(settingsService.isSubscriptionActive("token")).thenReturn(true);
 
         when(apiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
+        when(habrApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
+        when(getmatchApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
+        when(superjobApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
         when(vacancyService.saveVacancies(eq("token"), anyList())).thenReturn(List.of());
 
         SearchRequest request = new SearchRequest();
@@ -90,22 +109,34 @@ class VacancyBackendServiceTest {
         AuthServiceClient authServiceClient = mock(AuthServiceClient.class);
 
         VacancyAutoUpdater updater = new VacancyAutoUpdater(settingsRepository, smartService, authServiceClient);
+        ReflectionTestUtils.setField(updater, "workerCount", 1);
+        updater.startWorkers();
 
         UserSettings s1 = new UserSettings(1L);
+        s1.setAutoUpdateEnabled(true);
+        s1.setNextRunAt(LocalDateTime.now().minusMinutes(1));
         UserSettings s2 = new UserSettings(2L);
-        when(settingsRepository.findByAutoUpdateEnabledTrue()).thenReturn(List.of(s1, s2));
+        s2.setAutoUpdateEnabled(true);
+        s2.setNextRunAt(LocalDateTime.now().minusMinutes(1));
+        when(settingsRepository.findDueUsers(any(), any(Pageable.class))).thenReturn(List.of(s1, s2));
+        when(settingsRepository.findByTelegramId(1L)).thenReturn(Optional.of(s1));
+        when(settingsRepository.findByTelegramId(2L)).thenReturn(Optional.of(s2));
 
         TokenResponse tokenResponse = new TokenResponse();
         tokenResponse.setToken("t");
         when(authServiceClient.getTokenByTelegramId(1L)).thenReturn(tokenResponse);
         when(authServiceClient.getTokenByTelegramId(2L)).thenReturn(null);
+        SubscriptionStatusResponse active = new SubscriptionStatusResponse();
+        active.setActive(true);
+        when(authServiceClient.getSubscriptionStatus("t")).thenReturn(active);
 
         when(smartService.searchWithUserSettings(any(), eq("t"), eq(1L))).thenReturn(List.of());
 
         updater.updateAllUsers();
 
-        verify(smartService, times(1)).searchWithUserSettings(any(), eq("t"), eq(1L));
-        verify(smartService, never()).searchWithUserSettings(any(), eq("t"), eq(2L));
+        verify(smartService, timeout(1000).times(1)).searchWithUserSettings(any(), eq("t"), eq(1L));
+        verify(smartService, after(1000).never()).searchWithUserSettings(any(), eq("t"), eq(2L));
+        updater.stopWorkers();
     }
 
     @Test
@@ -115,6 +146,7 @@ class VacancyBackendServiceTest {
         HHruApiService service = new HHruApiService(restTemplate, authServiceClient);
 
         ReflectionTestUtils.setField(service, "baseUrl", "http://example");
+        ReflectionTestUtils.setField(service, "maxPages", 1);
 
         ProfileResponse profile = new ProfileResponse();
         profile.setTelegramId(99L);
@@ -132,8 +164,10 @@ class VacancyBackendServiceTest {
 
         Map<String, Object> body = new HashMap<>();
         body.put("items", List.of(item));
+        body.put("pages", 1);
 
-        when(restTemplate.getForEntity(anyString(), eq(Map.class))).thenReturn(ResponseEntity.ok(body));
+        when(restTemplate.exchange(any(java.net.URI.class), eq(HttpMethod.GET), any(), eq(Map.class)))
+                .thenReturn(ResponseEntity.ok(body));
 
         SearchRequest request = new SearchRequest();
         request.setQuery("dev");
@@ -186,6 +220,7 @@ class VacancyBackendServiceTest {
 
         UserSettings update = new UserSettings();
         update.setSearchQuery("new");
+        update.setTelegramNotify(true);
 
         UserSettings saved = service.updateSettings("token", update);
 

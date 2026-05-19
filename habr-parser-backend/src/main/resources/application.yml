@@ -1,0 +1,47 @@
+server:
+  port: ${SERVER_PORT:8085}
+  servlet:
+    context-path: /api
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5435/habr_parser_service}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  jackson:
+    time-zone: Europe/Moscow
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  habr:
+    base-url: ${HABR_PUBLIC_BASE_URL:https://career.habr.com}
+    search-url: ${HABR_SEARCH_URL:https://career.habr.com/vacancies}
+    timeout-ms: ${HABR_TIMEOUT_MS:15000}
+    user-agent: ${HABR_USER_AGENT:Mozilla/5.0 (compatible; SubscriptionHabrCareerParser/1.0; +https://subscriptionhhapp.ru)}
+  cache:
+    ttl-minutes: ${HABR_CACHE_TTL_MINUTES:30}
+  prefetch:
+    enabled: ${HABR_PREFETCH_ENABLED:true}
+    fixed-delay-ms: ${HABR_PREFETCH_DELAY_MS:300000}
+    initial-delay-ms: ${HABR_PREFETCH_INITIAL_DELAY_MS:120000}
+    max-pages: ${HABR_PREFETCH_MAX_PAGES:10}
+    recent-request-window-minutes: ${HABR_PREFETCH_ACTIVE_WINDOW_MINUTES:1440}
+    request-delay-ms: ${HABR_PREFETCH_REQUEST_DELAY_MS:500}
+
+logging:
+  level:
+    com.mkisten.habrparserbackend: INFO

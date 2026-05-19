@@ -61,6 +61,18 @@ public class HHruAreaService {
         return filtered;
     }
 
+    public CityDto findCityById(String cityId) {
+        if (cityId == null || cityId.isBlank()) {
+            return null;
+        }
+        for (CityDto city : ensureCache()) {
+            if (cityId.equals(city.getId())) {
+                return city;
+            }
+        }
+        return null;
+    }
+
     private synchronized List<CityDto> ensureCache() {
         if (Duration.between(cacheUpdatedAt, Instant.now()).compareTo(CACHE_TTL) < 0 && !cachedCities.isEmpty()) {
             return cachedCities;

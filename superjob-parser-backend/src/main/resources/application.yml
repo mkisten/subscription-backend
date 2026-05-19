@@ -1,0 +1,49 @@
+server:
+  port: ${SERVER_PORT:8087}
+  servlet:
+    context-path: /api
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5437/superjob_parser_service}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  jackson:
+    time-zone: Europe/Moscow
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  superjob:
+    base-url: ${SUPERJOB_PUBLIC_BASE_URL:https://russia.superjob.ru}
+    search-url: ${SUPERJOB_SEARCH_URL:https://russia.superjob.ru/vacancy/search/}
+    belarus-search-url: ${SUPERJOB_BELARUS_SEARCH_URL:https://www.superjob.by/vacancy/search/}
+    timeout-ms: ${SUPERJOB_TIMEOUT_MS:15000}
+    user-agent: ${SUPERJOB_USER_AGENT:Mozilla/5.0 (compatible; SubscriptionVacancyParser/1.0; +https://subscriptionhhapp.ru)}
+    page-size: ${SUPERJOB_PAGE_SIZE:40}
+  cache:
+    ttl-minutes: ${SUPERJOB_CACHE_TTL_MINUTES:30}
+  prefetch:
+    enabled: ${SUPERJOB_PREFETCH_ENABLED:true}
+    fixed-delay-ms: ${SUPERJOB_PREFETCH_DELAY_MS:300000}
+    initial-delay-ms: ${SUPERJOB_PREFETCH_INITIAL_DELAY_MS:120000}
+    max-pages: ${SUPERJOB_PREFETCH_MAX_PAGES:10}
+    recent-request-window-minutes: ${SUPERJOB_PREFETCH_ACTIVE_WINDOW_MINUTES:1440}
+    request-delay-ms: ${SUPERJOB_PREFETCH_REQUEST_DELAY_MS:250}
+
+logging:
+  level:
+    com.mkisten.superjobparserbackend: INFO

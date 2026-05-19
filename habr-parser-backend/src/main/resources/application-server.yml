@@ -1,0 +1,33 @@
+server:
+  port: ${SERVER_PORT:8085}
+  servlet:
+    context-path: /api
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5435/habr_parser_service}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  habr:
+    base-url: ${HABR_PUBLIC_BASE_URL:https://career.habr.com}
+    search-url: ${HABR_SEARCH_URL:https://career.habr.com/vacancies}
+    timeout-ms: ${HABR_TIMEOUT_MS:15000}
+    user-agent: ${HABR_USER_AGENT:Mozilla/5.0 (compatible; SubscriptionHabrCareerParser/1.0; +https://subscriptionhhapp.ru)}
