@@ -97,7 +97,7 @@ public class UserService {
             user.setPhone(request.phone());
         }
 
-        if (request.subscriptionPlan() != null || request.subscriptionDays() != null) {
+        if (request.subscriptionPlan() != null || request.subscriptionDays() != null || request.addResumeRecommendationCredits() != null) {
             ServiceCode serviceCode = request.service() != null ? request.service() : ServiceCode.VACANCY;
             UserServiceSubscription subscription = getOrCreateService(user, serviceCode);
 
@@ -110,6 +110,14 @@ public class UserService {
             if (request.subscriptionDays() != null) {
                 subscription.setSubscriptionEndDate(LocalDate.now().plusDays(request.subscriptionDays()));
             }
+            if (request.addResumeRecommendationCredits() != null) {
+                if (request.addResumeRecommendationCredits() <= 0) {
+                    throw new RuntimeException("Количество AI-кредитов для добавления должно быть больше нуля");
+                }
+                subscription.setResumeRecommendationCredits(
+                        normalizeCredits(subscription.getResumeRecommendationCredits()) + request.addResumeRecommendationCredits()
+                );
+            }
 
             boolean isActive = subscriptionCalculator.calculateSubscriptionActive(subscription);
             subscription.setActive(isActive);
@@ -120,6 +128,10 @@ public class UserService {
         User savedUser = userRepository.save(user);
         log.info("User profile updated: {}", telegramId);
         return savedUser;
+    }
+
+    private int normalizeCredits(Integer credits) {
+        return credits == null ? 0 : Math.max(credits, 0);
     }
 
     public User createUser(Long telegramId, String firstName, String lastName, String username) {
@@ -399,6 +411,10 @@ public class UserService {
 
     public List<UserServiceSubscription> getUserServices(User user) {
         return userServiceRepository.findByUser(user);
+    }
+
+    public UserServiceSubscription saveServiceSubscription(UserServiceSubscription subscription) {
+        return userServiceRepository.save(subscription);
     }
 
     private String normalizeLogin(String login) {

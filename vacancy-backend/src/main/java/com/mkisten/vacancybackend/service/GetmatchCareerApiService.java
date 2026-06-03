@@ -161,6 +161,7 @@ public class GetmatchCareerApiService {
                 vacancy.setId(item.get("id").toString());
                 vacancy.setUserTelegramId(telegramId);
                 vacancy.setTitle(item.get("name") == null ? null : item.get("name").toString());
+                vacancy.setSource("Getmatch");
 
                 Map<String, Object> employer = (Map<String, Object>) item.get("employer");
                 if (employer != null) {

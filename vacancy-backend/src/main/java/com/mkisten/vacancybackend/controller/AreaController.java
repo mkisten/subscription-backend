@@ -1,7 +1,7 @@
 package com.mkisten.vacancybackend.controller;
 
 import com.mkisten.vacancybackend.dto.CityDto;
-import com.mkisten.vacancybackend.service.HHruAreaService;
+import com.mkisten.vacancybackend.service.AreaCatalogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -20,13 +20,13 @@ import java.util.Set;
 @Tag(name = "Areas", description = "Справочник городов HH.ru")
 public class AreaController {
 
-    private final HHruAreaService hhruAreaService;
+    private final AreaCatalogService areaCatalogService;
 
     @Operation(summary = "Получить список городов")
     @GetMapping("/cities")
     public ResponseEntity<List<CityDto>> getCities(
             @RequestParam(value = "countries", required = false) Set<String> countries
     ) {
-        return ResponseEntity.ok(hhruAreaService.getCities(countries));
+        return ResponseEntity.ok(areaCatalogService.getCities(countries));
     }
 }

@@ -381,6 +381,7 @@ public class AdminController {
             @Schema(description = "Телефон") String phone,
             @Schema(description = "Количество дней подписки") Integer subscriptionDays,
             @Schema(description = "Тариф подписки") SubscriptionPlan subscriptionPlan,
+            @Schema(description = "Добавить AI-кредиты") Integer addResumeRecommendationCredits,
             @Schema(description = "Сервис") ServiceCode service
     ) {}
 
@@ -400,6 +401,7 @@ public class AdminController {
                 telegramAuthService.isSubscriptionActive(subscription),
                 telegramAuthService.getDaysRemaining(subscription),
                 subscription.getTrialUsed(),
+                subscription.getResumeRecommendationCredits(),
                 user.getRole().name(),
                 user.getCreatedAt(),
                 user.getLastLoginAt(),
@@ -444,6 +446,7 @@ public class AdminController {
             @Schema(description = "Активна ли подписка") Boolean isActive,
             @Schema(description = "Осталось дней подписки") Integer daysRemaining,
             @Schema(description = "Использован ли trial") Boolean trialUsed,
+            @Schema(description = "Баланс AI-кредитов") Integer resumeRecommendationCredits,
             @Schema(description = "Роль пользователя") String role,
             @Schema(description = "Дата создания") java.time.LocalDateTime createdAt,
             @Schema(description = "Дата последнего входа") java.time.LocalDateTime lastLoginAt,

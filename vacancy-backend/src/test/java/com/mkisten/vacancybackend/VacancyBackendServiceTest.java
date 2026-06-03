@@ -30,9 +30,10 @@ class VacancyBackendServiceTest {
     @Test
     void vacancyServiceSaveVacanciesFiltersExisting() {
         VacancyRepository vacancyRepository = mock(VacancyRepository.class);
+        UserSettingsRepository userSettingsRepository = mock(UserSettingsRepository.class);
         AuthServiceClient authServiceClient = mock(AuthServiceClient.class);
         VacancyStreamService vacancyStreamService = mock(VacancyStreamService.class);
-        VacancyService service = new VacancyService(vacancyRepository, authServiceClient, vacancyStreamService);
+        VacancyService service = new VacancyService(vacancyRepository, userSettingsRepository, authServiceClient, vacancyStreamService);
 
         ProfileResponse profile = new ProfileResponse();
         profile.setTelegramId(10L);
@@ -64,7 +65,9 @@ class VacancyBackendServiceTest {
         HabrCareerApiService habrApiService = mock(HabrCareerApiService.class);
         GetmatchCareerApiService getmatchApiService = mock(GetmatchCareerApiService.class);
         SuperjobCareerApiService superjobApiService = mock(SuperjobCareerApiService.class);
+        RabotaByApiService rabotaByApiService = mock(RabotaByApiService.class);
         TelegramNotificationService telegramService = mock(TelegramNotificationService.class);
+        VacancyRepository vacancyRepository = mock(VacancyRepository.class);
         VacancyService vacancyService = mock(VacancyService.class);
 
         VacancySmartService service = new VacancySmartService(
@@ -73,6 +76,7 @@ class VacancyBackendServiceTest {
                 habrApiService,
                 getmatchApiService,
                 superjobApiService,
+                rabotaByApiService,
                 telegramService,
                 vacancyService
         );
@@ -89,6 +93,7 @@ class VacancyBackendServiceTest {
         when(habrApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
         when(getmatchApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
         when(superjobApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
+        when(rabotaByApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
         when(vacancyService.saveVacancies(eq("token"), anyList())).thenReturn(List.of());
 
         SearchRequest request = new SearchRequest();
@@ -100,6 +105,56 @@ class VacancyBackendServiceTest {
         assertEquals("intern", request.getExcludeKeywords());
         assertEquals(0, result.size());
         verify(telegramService).sendAllUnsentVacanciesToTelegram("token", 10L);
+    }
+
+    @Test
+    void vacancySmartServiceUsesRabotaByForBelarusRequests() {
+        UserSettingsService settingsService = mock(UserSettingsService.class);
+        HHruApiService apiService = mock(HHruApiService.class);
+        HabrCareerApiService habrApiService = mock(HabrCareerApiService.class);
+        GetmatchCareerApiService getmatchApiService = mock(GetmatchCareerApiService.class);
+        SuperjobCareerApiService superjobApiService = mock(SuperjobCareerApiService.class);
+        RabotaByApiService rabotaByApiService = mock(RabotaByApiService.class);
+        TelegramNotificationService telegramService = mock(TelegramNotificationService.class);
+        VacancyService vacancyService = mock(VacancyService.class);
+
+        VacancySmartService service = new VacancySmartService(
+                settingsService,
+                apiService,
+                habrApiService,
+                getmatchApiService,
+                superjobApiService,
+                rabotaByApiService,
+                telegramService,
+                vacancyService
+        );
+
+        UserSettings settings = new UserSettings(10L);
+        settings.setSearchQuery("java");
+        settings.setCountries(Set.of("belarus"));
+        settings.setWorkTypes(Set.of());
+        settings.setTelegramNotify(false);
+        when(settingsService.getSettings("token")).thenReturn(settings);
+
+        when(apiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
+        when(habrApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
+        when(getmatchApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
+        when(superjobApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of());
+
+        Vacancy rabotaVacancy = new Vacancy();
+        rabotaVacancy.setId("rabota-by-1");
+        rabotaVacancy.setTitle("Java Developer");
+        rabotaVacancy.setSchedule("Удалённо");
+        when(rabotaByApiService.searchVacancies(any(), eq("token"))).thenReturn(List.of(rabotaVacancy));
+        when(vacancyService.saveVacancies(eq("token"), anyList())).thenReturn(List.of(rabotaVacancy));
+
+        SearchRequest request = new SearchRequest();
+        request.setCountries(Set.of("belarus"));
+        List<Vacancy> result = service.searchWithUserSettings(request, "token", 10L);
+
+        verify(rabotaByApiService).searchVacancies(any(), eq("token"));
+        assertEquals(1, result.size());
+        assertEquals("rabota-by-1", result.get(0).getId());
     }
 
     @Test
@@ -207,7 +262,8 @@ class VacancyBackendServiceTest {
         UserSettingsRepository settingsRepository = mock(UserSettingsRepository.class);
         AuthServiceClient authServiceClient = mock(AuthServiceClient.class);
         TelegramNotificationService telegramService = mock(TelegramNotificationService.class);
-        UserSettingsService service = new UserSettingsService(settingsRepository, authServiceClient, telegramService);
+        VacancyRepository vacancyRepository = mock(VacancyRepository.class);
+        UserSettingsService service = new UserSettingsService(settingsRepository, authServiceClient, telegramService, vacancyRepository);
 
         ProfileResponse profile = new ProfileResponse();
         profile.setTelegramId(5L);
@@ -229,11 +285,46 @@ class VacancyBackendServiceTest {
     }
 
     @Test
+    void userSettingsServiceRemovesVacanciesForExcludedCompaniesByPartialEmployerMatch() {
+        UserSettingsRepository settingsRepository = mock(UserSettingsRepository.class);
+        AuthServiceClient authServiceClient = mock(AuthServiceClient.class);
+        TelegramNotificationService telegramService = mock(TelegramNotificationService.class);
+        VacancyRepository vacancyRepository = mock(VacancyRepository.class);
+        UserSettingsService service = new UserSettingsService(settingsRepository, authServiceClient, telegramService, vacancyRepository);
+
+        ProfileResponse profile = new ProfileResponse();
+        profile.setTelegramId(5L);
+        when(authServiceClient.getCurrentUserProfile("token")).thenReturn(profile);
+
+        UserSettings existing = new UserSettings(5L);
+        when(settingsRepository.findByTelegramId(5L)).thenReturn(Optional.of(existing));
+        when(settingsRepository.save(any(UserSettings.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Vacancy matching = new Vacancy();
+        matching.setId("match-1");
+        matching.setEmployer("Yandex Practicum");
+        Vacancy other = new Vacancy();
+        other.setId("other-1");
+        other.setEmployer("EPAM");
+        when(vacancyRepository.findByUserTelegramIdOrderByStatusAscLoadedAtDesc(5L))
+                .thenReturn(List.of(matching, other));
+
+        UserSettings update = new UserSettings();
+        update.setExcludeCompanies("Yandex");
+
+        service.updateSettings("token", update);
+
+        verify(vacancyRepository).deleteByUserAndId(5L, "match-1");
+        verify(vacancyRepository, never()).deleteByUserAndId(5L, "other-1");
+    }
+
+    @Test
     void userSettingsServiceSubscriptionStatusHandlesException() {
         UserSettingsRepository settingsRepository = mock(UserSettingsRepository.class);
         AuthServiceClient authServiceClient = mock(AuthServiceClient.class);
         TelegramNotificationService telegramService = mock(TelegramNotificationService.class);
-        UserSettingsService service = new UserSettingsService(settingsRepository, authServiceClient, telegramService);
+        VacancyRepository vacancyRepository = mock(VacancyRepository.class);
+        UserSettingsService service = new UserSettingsService(settingsRepository, authServiceClient, telegramService, vacancyRepository);
 
         when(authServiceClient.getSubscriptionStatus("token")).thenThrow(new RuntimeException("fail"));
 

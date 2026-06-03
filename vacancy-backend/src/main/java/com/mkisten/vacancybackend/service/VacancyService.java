@@ -4,6 +4,7 @@ import com.mkisten.vacancybackend.client.AuthServiceClient;
 import com.mkisten.vacancybackend.dto.ProfileResponse;
 import com.mkisten.vacancybackend.entity.Vacancy;
 import com.mkisten.vacancybackend.entity.VacancyStatus;
+import com.mkisten.vacancybackend.repository.UserSettingsRepository;
 import com.mkisten.vacancybackend.repository.VacancyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -20,6 +22,7 @@ import java.util.stream.Collectors;
 public class VacancyService {
 
     private final VacancyRepository vacancyRepository;
+    private final UserSettingsRepository userSettingsRepository;
     private final AuthServiceClient authServiceClient;
     private final VacancyStreamService vacancyStreamService;
 
@@ -114,10 +117,19 @@ public class VacancyService {
     @Transactional(readOnly = true)
     public List<Vacancy> getUserVacancies(String token, VacancyStatus status) {
         Long userTelegramId = getTelegramId(token);
+        Set<String> excludedCompanies = userSettingsRepository.findByTelegramId(userTelegramId)
+                .map(settings -> parseCsvLowercase(settings.getExcludeCompanies()))
+                .orElseGet(Set::of);
         if (status == null) {
-            return vacancyRepository.findByUserTelegramIdOrderByStatusAscLoadedAtDesc(userTelegramId);
+            return filterExcludedCompanies(
+                    vacancyRepository.findByUserTelegramIdOrderByStatusAscLoadedAtDesc(userTelegramId),
+                    excludedCompanies
+            );
         }
-        return vacancyRepository.findByUserTelegramIdAndStatusOrderByLoadedAtDesc(userTelegramId, status);
+        return filterExcludedCompanies(
+                vacancyRepository.findByUserTelegramIdAndStatusOrderByLoadedAtDesc(userTelegramId, status),
+                excludedCompanies
+        );
     }
 
     /**
@@ -147,5 +159,32 @@ public class VacancyService {
     public Long getNewVacanciesCount(String token) {
         Long userTelegramId = getTelegramId(token);
         return vacancyRepository.countNewVacancies(userTelegramId);
+    }
+
+    private List<Vacancy> filterExcludedCompanies(List<Vacancy> vacancies, Set<String> excludedCompanies) {
+        if (excludedCompanies == null || excludedCompanies.isEmpty()) {
+            return vacancies;
+        }
+        return vacancies.stream()
+                .filter(vacancy -> {
+                    String employer = vacancy.getEmployer();
+                    if (employer == null) {
+                        return true;
+                    }
+                    String normalized = employer.trim().toLowerCase(Locale.ROOT);
+                    return excludedCompanies.stream().noneMatch(normalized::contains);
+                })
+                .collect(Collectors.toList());
+    }
+
+    private Set<String> parseCsvLowercase(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return Set.of();
+        }
+        return java.util.Arrays.stream(rawValue.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
     }
 }

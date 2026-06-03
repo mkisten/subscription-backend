@@ -65,6 +65,10 @@ public class HabrCareerApiService {
             return new ArrayList<>();
         }
         try {
+            if (!supportsRequest(request)) {
+                log.info("Habr Career skipped: unsupported countries={} cityId={}", request.getCountries(), request.getCityId());
+                return new ArrayList<>();
+            }
 
             // Получаем профиль пользователя через AuthServiceClient
             ProfileResponse profile = authServiceClient.getCurrentUserProfile(token);
@@ -151,6 +155,29 @@ public class HabrCareerApiService {
         return new ArrayList<>();
     }
 
+    private boolean supportsRequest(SearchRequest request) {
+        if (request == null) {
+            return true;
+        }
+
+        if (request.getCountries() != null && !request.getCountries().isEmpty()) {
+            for (String country : request.getCountries()) {
+                if (country == null) {
+                    continue;
+                }
+                String normalized = country.trim().toLowerCase(Locale.ROOT);
+                if ("belarus".equals(normalized)) {
+                    return false;
+                }
+                if ("russia".equals(normalized)) {
+                    return true;
+                }
+            }
+        }
+
+        return true;
+    }
+
     private java.net.URI buildSearchUri(SearchRequest request, int page) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl + "/vacancies")
                 .queryParam("text", request.getQuery())
@@ -203,6 +230,7 @@ public class HabrCareerApiService {
                 vacancy.setId(item.get("id").toString());
                 vacancy.setUserTelegramId(telegramId);
                 vacancy.setTitle(title);
+                vacancy.setSource("Habr Career");
 
                 // Employer
                 Map<String, Object> employer = (Map<String, Object>) item.get("employer");
@@ -360,54 +388,32 @@ public class HabrCareerApiService {
             return true;
         }
 
-        List<String> haystacks = new ArrayList<>();
         Object title = item.get("name");
-        if (title instanceof String titleValue && !titleValue.isBlank()) {
-            haystacks.add(titleValue);
-        }
-
-        Object employerRaw = item.get("employer");
-        if (employerRaw instanceof Map<?, ?> employer && employer.get("name") instanceof String employerName && !employerName.isBlank()) {
-            haystacks.add(employerName);
+        if (!(title instanceof String titleValue) || titleValue.isBlank()) {
+            return false;
         }
 
         String normalizedQuery = normalizeForMatch(query);
-        Object snippetRaw = item.get("snippet");
-        if (snippetRaw instanceof Map<?, ?> snippet) {
-            Object requirement = snippet.get("requirement");
-            if (requirement instanceof String requirementText && !requirementText.isBlank()) {
-                haystacks.add(requirementText);
+        String normalizedTitle = normalizeForMatch(titleValue);
+        if (normalizedTitle.equals(normalizedQuery)) {
+            return true;
+        }
+
+        List<String> titleTokens = List.of(normalizedTitle.split("\\s+"));
+        List<String> queryTokens = List.of(normalizedQuery.split("\\s+"));
+
+        boolean hasToken = false;
+        for (String token : queryTokens) {
+            if (token.isBlank()) {
+                continue;
             }
-            Object responsibility = snippet.get("responsibility");
-            if (responsibility instanceof String responsibilityText && !responsibilityText.isBlank()) {
-                haystacks.add(responsibilityText);
+            hasToken = true;
+            if (!titleTokens.contains(token)) {
+                return false;
             }
         }
 
-        for (String haystack : haystacks) {
-            String normalizedHaystack = normalizeForMatch(haystack);
-            if (normalizedHaystack.contains(normalizedQuery)) {
-                return true;
-            }
-
-            String[] tokens = normalizedQuery.split("\\s+");
-            boolean hasToken = false;
-            boolean allTokensPresent = true;
-            for (String token : tokens) {
-                if (token.isBlank()) {
-                    continue;
-                }
-                hasToken = true;
-                if (!normalizedHaystack.contains(token)) {
-                    allTokensPresent = false;
-                    break;
-                }
-            }
-            if (hasToken && allTokensPresent) {
-                return true;
-            }
-        }
-        return false;
+        return hasToken;
     }
 
     private String normalizeForMatch(String value) {

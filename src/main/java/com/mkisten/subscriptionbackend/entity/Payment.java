@@ -13,6 +13,18 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class Payment {
 
+    public enum PaymentStatus {
+        PENDING,    // Ожидает оплаты
+        VERIFIED,   // Оплата проверена
+        REJECTED,   // Оплата отклонена
+        EXPIRED     // Время на оплату истекло
+    }
+
+    public enum PaymentType {
+        SUBSCRIPTION,
+        AI_RESUME_CREDITS
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -31,8 +43,15 @@ public class Payment {
     @Column(name = "service_code", nullable = false)
     private ServiceCode serviceCode = ServiceCode.VACANCY;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_type", nullable = false, length = 32)
+    private PaymentType paymentType = PaymentType.SUBSCRIPTION;
+
     @Column(name = "months", nullable = false)
     private Integer months;
+
+    @Column(name = "credits_amount")
+    private Integer creditsAmount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -50,21 +69,28 @@ public class Payment {
     @Column(name = "admin_notes")
     private String adminNotes;
 
-    public enum PaymentStatus {
-        PENDING,    // Ожидает оплаты
-        VERIFIED,   // Оплата проверена
-        REJECTED,   // Оплата отклонена
-        EXPIRED     // Время на оплату истекло
-    }
-
     public Payment(Long telegramId, Double amount, SubscriptionPlan plan, Integer months, ServiceCode serviceCode) {
         this.telegramId = telegramId;
         this.amount = amount;
         this.plan = plan;
         this.serviceCode = serviceCode;
+        this.paymentType = PaymentType.SUBSCRIPTION;
         this.months = months;
         this.status = PaymentStatus.PENDING;
         this.phoneNumber = "+79779104605"; // Ваш номер Т-Банк
+        this.createdAt = LocalDateTime.now();
+    }
+
+    public Payment(Long telegramId, Double amount, Integer creditsAmount, ServiceCode serviceCode) {
+        this.telegramId = telegramId;
+        this.amount = amount;
+        this.plan = SubscriptionPlan.MONTHLY;
+        this.serviceCode = serviceCode;
+        this.paymentType = PaymentType.AI_RESUME_CREDITS;
+        this.months = 1;
+        this.creditsAmount = creditsAmount;
+        this.status = PaymentStatus.PENDING;
+        this.phoneNumber = "+79779104605";
         this.createdAt = LocalDateTime.now();
     }
 }

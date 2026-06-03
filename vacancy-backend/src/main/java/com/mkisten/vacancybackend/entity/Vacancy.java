@@ -47,6 +47,9 @@ public class Vacancy {
     @Column(name = "url", length = 500)
     private String url;
 
+    @Column(name = "source", length = 50)
+    private String source;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private VacancyStatus status = VacancyStatus.NEW;

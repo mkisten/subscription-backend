@@ -184,6 +184,7 @@ public class HHruApiService {
                 vacancy.setId(item.get("id").toString());
                 vacancy.setUserTelegramId(telegramId);
                 vacancy.setTitle((String) item.get("name"));
+                vacancy.setSource("HH");
 
                 // Employer
                 Map<String, Object> employer = (Map<String, Object>) item.get("employer");

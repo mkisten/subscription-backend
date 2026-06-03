@@ -30,13 +30,23 @@ public class PaymentController {
     ) {
         User user = resolveUser(authentication);
 
-        SubscriptionPlan plan = request.getPlan() != null
-                ? SubscriptionPlan.valueOf(request.getPlan().name())
-                : SubscriptionPlan.TRIAL;
-
+        String paymentType = request.getPaymentType() == null ? "SUBSCRIPTION" : request.getPaymentType().trim().toUpperCase();
         ServiceCode serviceCode = request.getService() != null
                 ? ServiceCode.valueOf(request.getService().name())
                 : ServiceCode.VACANCY;
+
+        if ("AI_RESUME_CREDITS".equals(paymentType)) {
+            Payment payment = paymentService.createAiCreditsPayment(
+                    user.getTelegramId(),
+                    request.getCreditsAmount(),
+                    serviceCode
+            );
+            return ResponseEntity.ok(mapPayment(payment));
+        }
+
+        SubscriptionPlan plan = request.getPlan() != null
+                ? SubscriptionPlan.valueOf(request.getPlan().name())
+                : SubscriptionPlan.TRIAL;
 
         Payment payment = paymentService.createPayment(
                 user.getTelegramId(),
@@ -57,6 +67,8 @@ public class PaymentController {
         dto.setPlan(com.mkisten.subscription.contract.enums.SubscriptionPlanDto.valueOf(payment.getPlan().name()));
         dto.setService(com.mkisten.subscription.contract.enums.ServiceCodeDto.valueOf(payment.getServiceCode().name()));
         dto.setMonths(payment.getMonths());
+        dto.setPaymentType(payment.getPaymentType().name());
+        dto.setCreditsAmount(payment.getCreditsAmount());
         dto.setStatus(payment.getStatus().name());
         dto.setPhoneNumber(payment.getPhoneNumber());
         dto.setCreatedAt(payment.getCreatedAt());

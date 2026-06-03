@@ -29,6 +29,12 @@ public class UserSettings {
     @Column(name = "exclude_keywords", length = 1000)
     private String excludeKeywords = "";
 
+    @Column(name = "exclude_companies", length = 1000)
+    private String excludeCompanies = "";
+
+    @Column(name = "search_presets_json", columnDefinition = "TEXT")
+    private String searchPresetsJson = "[]";
+
     @Column(name = "city_id")
     private String cityId;
 

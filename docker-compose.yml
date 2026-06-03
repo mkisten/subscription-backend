@@ -316,6 +316,8 @@ services:
     container_name: vacancy_backend
     ports:
       - "8081:8081"
+    volumes:
+      - ./data/resumes:/app/uploads/resumes
     environment:
       - TZ=Europe/Moscow
       - SPRING_PROFILES_ACTIVE=docker
@@ -340,6 +342,12 @@ services:
       - GETMATCH_BASE_URL=${GETMATCH_BASE_URL:-http://getmatch-parser-app:8086/api}
       - SUPERJOB_ENABLED=${SUPERJOB_ENABLED:-true}
       - SUPERJOB_BASE_URL=${SUPERJOB_BASE_URL:-http://superjob-parser-app:8087/api}
+      - APP_RESUME_STORAGE_PATH=${APP_RESUME_STORAGE_PATH:-/app/uploads/resumes}
+      - AI_RESUME_BASE_URL=${AI_RESUME_BASE_URL:-https://codex.sale/v1}
+      - AI_RESUME_API_KEY=${AI_RESUME_API_KEY}
+      - AI_RESUME_MODEL=${AI_RESUME_MODEL:-gpt-5.4-mini}
+      - AI_RESUME_TIMEOUT_MS=${AI_RESUME_TIMEOUT_MS:-90000}
+      - AI_RESUME_USER_AGENT=${AI_RESUME_USER_AGENT:-Mozilla/5.0 (compatible; VacancyResumeAssistant/1.0)}
       - SERVER_PORT=8081
       - SERVER_SERVLET_CONTEXT_PATH=/api
     depends_on:

@@ -19,6 +19,8 @@ public class PaymentResponseDto {
     private SubscriptionPlanDto plan;
     private Integer months;
     private ServiceCodeDto service;
+    private String paymentType;
+    private Integer creditsAmount;
 
     /**
      * Статус из Payment.PaymentStatus.name()

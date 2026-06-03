@@ -45,6 +45,12 @@ public class UserServiceSubscription {
     @Column(name = "subscription_active", nullable = false)
     private Boolean subscriptionActive = false;
 
+    @Column(name = "resume_recommendations_free_used", nullable = false)
+    private Integer resumeRecommendationsFreeUsed = 0;
+
+    @Column(name = "resume_recommendation_credits", nullable = false)
+    private Integer resumeRecommendationCredits = 0;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

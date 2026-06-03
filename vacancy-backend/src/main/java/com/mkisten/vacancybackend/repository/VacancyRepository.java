@@ -21,6 +21,8 @@ public interface VacancyRepository extends JpaRepository<Vacancy, VacancyKey> {
     List<Vacancy> findByUserTelegramIdAndStatusOrderByLoadedAtDesc(
             Long userTelegramId, VacancyStatus status);
 
+    java.util.Optional<Vacancy> findByIdAndUserTelegramId(String id, Long userTelegramId);
+
     boolean existsByIdAndUserTelegramId(String id, Long userTelegramId);
 
     List<Vacancy> findByUserTelegramIdAndSentToTelegramFalseOrderByPublishedAtAsc(Long userTelegramId);

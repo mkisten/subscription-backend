@@ -28,6 +28,11 @@ spring:
     time-zone: UTC
     date-format: yyyy-MM-dd HH:mm:ss
 
+  servlet:
+    multipart:
+      max-file-size: 6MB
+      max-request-size: 6MB
+
 auth:
   service:
     url: ${AUTH_SERVICE_URL:https://api.subscriptionhhapp.ru}
@@ -51,6 +56,23 @@ app:
     enabled: ${SUPERJOB_ENABLED:false}
     base-url: ${SUPERJOB_BASE_URL:http://127.0.0.1:8087/api}
     max-pages: ${APP_SUPERJOB_MAX_PAGES:10}
+  rabota-by:
+    enabled: ${RABOTA_BY_ENABLED:true}
+    base-url: ${RABOTA_BY_BASE_URL:https://rabota.by}
+    search-url: ${RABOTA_BY_SEARCH_URL:https://rabota.by/search/vacancy}
+    timeout-ms: ${APP_RABOTA_BY_TIMEOUT:15000}
+    user-agent: ${RABOTA_BY_USER_AGENT:Mozilla/5.0 (compatible; VacancyBot/1.0)}
+    max-pages: ${APP_RABOTA_BY_MAX_PAGES:5}
+  resume:
+    storage-path: ${APP_RESUME_STORAGE_PATH:uploads/resumes}
+  ai-resume:
+    base-url: ${AI_RESUME_BASE_URL:https://codex.sale/v1}
+    api-key: ${AI_RESUME_API_KEY:}
+    model: ${AI_RESUME_MODEL:gpt-5.4-mini}
+    timeout-ms: ${AI_RESUME_TIMEOUT_MS:90000}
+    user-agent: ${AI_RESUME_USER_AGENT:Mozilla/5.0 (compatible; VacancyResumeAssistant/1.0)}
+    max-vacancy-text-length: ${AI_RESUME_MAX_VACANCY_TEXT_LENGTH:18000}
+    max-resume-text-length: ${AI_RESUME_MAX_RESUME_TEXT_LENGTH:30000}
   auto-update:
     workers: 1
 

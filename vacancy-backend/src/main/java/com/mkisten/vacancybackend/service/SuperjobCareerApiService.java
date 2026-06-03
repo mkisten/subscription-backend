@@ -100,6 +100,11 @@ public class SuperjobCareerApiService {
             LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
             CityDto resolvedCity = hhruAreaService.findCityById(request.getCityId());
             List<String> countries = resolveCountries(request, resolvedCity);
+            if (countries.isEmpty()) {
+                log.info("SuperJob skipped: no supported countries for request countries={} cityId={}",
+                        request.getCountries(), request.getCityId());
+                return new ArrayList<>();
+            }
 
             List<Vacancy> allVacancies = new ArrayList<>();
             for (String country : countries) {
@@ -198,10 +203,11 @@ public class SuperjobCareerApiService {
         List<String> result = new ArrayList<>();
         if (resolvedCity != null) {
             String country = HH_COUNTRY_ID_TO_KEY.get(resolvedCity.getCountryId());
-            if (country != null) {
+            if (supportsCountry(country)) {
                 result.add(country);
                 return result;
             }
+            return result;
         }
 
         if (request.getCountries() != null) {
@@ -210,7 +216,7 @@ public class SuperjobCareerApiService {
                     continue;
                 }
                 String normalized = country.trim().toLowerCase(Locale.ROOT);
-                if (normalized.equals("russia") || normalized.equals("belarus")) {
+                if (supportsCountry(normalized)) {
                     result.add(normalized);
                 }
             }
@@ -219,6 +225,10 @@ public class SuperjobCareerApiService {
             result.add("russia");
         }
         return result.stream().distinct().toList();
+    }
+
+    private boolean supportsCountry(String country) {
+        return "russia".equals(country);
     }
 
     private String resolveTownId(String country, String cityName) {
@@ -249,6 +259,7 @@ public class SuperjobCareerApiService {
                 vacancy.setId("superjob-" + item.get("id"));
                 vacancy.setUserTelegramId(telegramId);
                 vacancy.setTitle(title);
+                vacancy.setSource("SuperJob");
 
                 Map<String, Object> employer = (Map<String, Object>) item.get("employer");
                 if (employer != null) {
@@ -387,54 +398,32 @@ public class SuperjobCareerApiService {
             return true;
         }
 
-        List<String> haystacks = new ArrayList<>();
         Object title = item.get("name");
-        if (title instanceof String titleValue && !titleValue.isBlank()) {
-            haystacks.add(titleValue);
-        }
-
-        Object employerRaw = item.get("employer");
-        if (employerRaw instanceof Map<?, ?> employer && employer.get("name") instanceof String employerName && !employerName.isBlank()) {
-            haystacks.add(employerName);
+        if (!(title instanceof String titleValue) || titleValue.isBlank()) {
+            return false;
         }
 
         String normalizedQuery = normalizeForMatch(query);
-        Object snippetRaw = item.get("snippet");
-        if (snippetRaw instanceof Map<?, ?> snippet) {
-            Object requirement = snippet.get("requirement");
-            if (requirement instanceof String requirementText && !requirementText.isBlank()) {
-                haystacks.add(requirementText);
+        String normalizedTitle = normalizeForMatch(titleValue);
+        if (normalizedTitle.equals(normalizedQuery)) {
+            return true;
+        }
+
+        List<String> titleTokens = List.of(normalizedTitle.split("\\s+"));
+        List<String> queryTokens = List.of(normalizedQuery.split("\\s+"));
+
+        boolean hasToken = false;
+        for (String token : queryTokens) {
+            if (token.isBlank()) {
+                continue;
             }
-            Object responsibility = snippet.get("responsibility");
-            if (responsibility instanceof String responsibilityText && !responsibilityText.isBlank()) {
-                haystacks.add(responsibilityText);
+            hasToken = true;
+            if (!titleTokens.contains(token)) {
+                return false;
             }
         }
 
-        for (String haystack : haystacks) {
-            String normalizedHaystack = normalizeForMatch(haystack);
-            if (normalizedHaystack.contains(normalizedQuery)) {
-                return true;
-            }
-
-            String[] tokens = normalizedQuery.split("\\s+");
-            boolean hasToken = false;
-            boolean allTokensPresent = true;
-            for (String token : tokens) {
-                if (token.isBlank()) {
-                    continue;
-                }
-                hasToken = true;
-                if (!normalizedHaystack.contains(token)) {
-                    allTokensPresent = false;
-                    break;
-                }
-            }
-            if (hasToken && allTokensPresent) {
-                return true;
-            }
-        }
-        return false;
+        return hasToken;
     }
 
     private String normalizeForMatch(String value) {

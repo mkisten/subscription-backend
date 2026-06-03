@@ -1,6 +1,7 @@
 package com.mkisten.subscriptionbackend.service;
 
 import com.mkisten.subscriptionbackend.controller.AdminPaymentController;
+import com.mkisten.subscriptionbackend.entity.Payment.PaymentType;
 import com.mkisten.subscriptionbackend.entity.Payment;
 import com.mkisten.subscriptionbackend.entity.ServiceCode;
 import com.mkisten.subscriptionbackend.entity.SubscriptionPlan;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -35,11 +37,31 @@ public class PaymentService {
     private static final double MONTHLY_PRICE = 299.0;
     private static final double YEARLY_PRICE = 2990.0;
     private static final double LIFETIME_PRICE = 9990.0;
+    private static final Map<Integer, Double> AI_RESUME_CREDITS_PACKAGE_PRICES = Map.of(
+            1, 50.0,
+            5, 150.0,
+            10, 250.0,
+            100, 1000.0
+    );
+
+    private final AiResumeCreditService aiResumeCreditService;
 
     public Payment createPayment(Long telegramId, SubscriptionPlan plan, Integer months, ServiceCode serviceCode) {
         double amount = calculateAmount(plan, months);
 
         Payment payment = new Payment(telegramId, amount, plan, months, serviceCode);
+        return paymentRepository.save(payment);
+    }
+
+    public Payment createAiCreditsPayment(Long telegramId, Integer creditsAmount, ServiceCode serviceCode) {
+        if (creditsAmount == null || creditsAmount <= 0) {
+            throw new IllegalArgumentException("creditsAmount must be positive");
+        }
+        Double amount = AI_RESUME_CREDITS_PACKAGE_PRICES.get(creditsAmount);
+        if (amount == null) {
+            throw new IllegalArgumentException("Unsupported AI credits package. Available options: 1, 5, 10, 100");
+        }
+        Payment payment = new Payment(telegramId, amount, creditsAmount, serviceCode);
         return paymentRepository.save(payment);
     }
 
@@ -96,10 +118,13 @@ public class PaymentService {
 
         Payment payment = paymentOpt.get();
 
-        // Продлеваем подписку пользователя
-        User user = userService.findByTelegramId(payment.getTelegramId());
-        ServiceCode serviceCode = payment.getServiceCode() != null ? payment.getServiceCode() : ServiceCode.VACANCY;
-        userService.extendSubscription(user.getTelegramId(), payment.getMonths() * 30, payment.getPlan(), serviceCode);
+        if (payment.getPaymentType() == PaymentType.AI_RESUME_CREDITS) {
+            aiResumeCreditService.addCredits(payment.getTelegramId(), payment.getCreditsAmount() == null ? 0 : payment.getCreditsAmount());
+        } else {
+            User user = userService.findByTelegramId(payment.getTelegramId());
+            ServiceCode serviceCode = payment.getServiceCode() != null ? payment.getServiceCode() : ServiceCode.VACANCY;
+            userService.extendSubscription(user.getTelegramId(), payment.getMonths() * 30, payment.getPlan(), serviceCode);
+        }
 
         // Обновляем статус платежа
         payment.setStatus(Payment.PaymentStatus.VERIFIED);

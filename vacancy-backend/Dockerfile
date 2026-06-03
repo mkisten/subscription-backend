@@ -28,7 +28,7 @@ FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
 # Создаем пользователя для безопасности
-RUN addgroup -S spring && adduser -S spring -G spring
+RUN apk add --no-cache curl && addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
 
 # Копируем JAR из builder stage

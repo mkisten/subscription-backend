@@ -107,7 +107,8 @@ class SubscriptionBackendServiceTest {
         PaymentRepository paymentRepository = mock(PaymentRepository.class);
         UserService userService = mock(UserService.class);
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        PaymentService service = new PaymentService(paymentRepository, userService, publisher);
+        AiResumeCreditService aiResumeCreditService = mock(AiResumeCreditService.class);
+        PaymentService service = new PaymentService(paymentRepository, userService, publisher, aiResumeCreditService);
 
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -117,11 +118,28 @@ class SubscriptionBackendServiceTest {
     }
 
     @Test
+    void paymentServiceCreateAiCreditsPaymentUsesPackagePricing() {
+        PaymentRepository paymentRepository = mock(PaymentRepository.class);
+        UserService userService = mock(UserService.class);
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+        AiResumeCreditService aiResumeCreditService = mock(AiResumeCreditService.class);
+        PaymentService service = new PaymentService(paymentRepository, userService, publisher, aiResumeCreditService);
+
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Payment payment = service.createAiCreditsPayment(1L, 10, ServiceCode.VACANCY);
+        assertEquals(250.0, payment.getAmount());
+        assertEquals(10, payment.getCreditsAmount());
+        assertEquals(Payment.PaymentType.AI_RESUME_CREDITS, payment.getPaymentType());
+    }
+
+    @Test
     void paymentServiceVerifyPaymentPublishesEvent() {
         PaymentRepository paymentRepository = mock(PaymentRepository.class);
         UserService userService = mock(UserService.class);
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        PaymentService service = new PaymentService(paymentRepository, userService, publisher);
+        AiResumeCreditService aiResumeCreditService = mock(AiResumeCreditService.class);
+        PaymentService service = new PaymentService(paymentRepository, userService, publisher, aiResumeCreditService);
 
         Payment payment = new Payment(1L, 100.0, SubscriptionPlan.MONTHLY, 1, ServiceCode.VACANCY);
         payment.setId(5L);

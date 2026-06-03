@@ -3,6 +3,7 @@ package com.mkisten.vacancybackend.service;
 import com.mkisten.vacancybackend.client.AuthServiceClient;
 import com.mkisten.vacancybackend.dto.SubscriptionStatusResponse;
 import com.mkisten.vacancybackend.entity.UserSettings;
+import com.mkisten.vacancybackend.repository.VacancyRepository;
 import com.mkisten.vacancybackend.repository.UserSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -20,6 +24,7 @@ public class UserSettingsService {
     private final UserSettingsRepository settingsRepository;
     private final AuthServiceClient authServiceClient;
     private final TelegramNotificationService telegramService;
+    private final VacancyRepository vacancyRepository;
 
     /** Получить текущего пользователя из токена */
     private Long getTelegramIdByToken(String token) {
@@ -75,6 +80,9 @@ public class UserSettingsService {
         if (newSettings.getExcludeKeywords() != null) {
             existingSettings.setExcludeKeywords(newSettings.getExcludeKeywords());
         }
+        if (newSettings.getExcludeCompanies() != null) {
+            existingSettings.setExcludeCompanies(newSettings.getExcludeCompanies());
+        }
         if (newSettings.getCityId() != null) {
             existingSettings.setCityId(newSettings.getCityId());
         }
@@ -99,6 +107,7 @@ public class UserSettingsService {
 
         applyAutoUpdateSchedule(existingSettings);
         UserSettings saved = settingsRepository.save(existingSettings);
+        removeExcludedCompaniesVacancies(saved);
 
         // Отправить уведомление об обновлении
         if (Boolean.TRUE.equals(saved.getTelegramNotify())) {
@@ -109,10 +118,11 @@ public class UserSettingsService {
             }
         }
         log.info(
-                "Настройки пользователя {} обновлены: ключевые слова='{}', исключения='{}', период={} дн., типы работы={}, регионы={}, автообновление={}, интервал автообновления={} мин., рассылка в Telegram={}, тема='{}'",
+                "Настройки пользователя {} обновлены: ключевые слова='{}', исключения='{}', исключённые компании='{}', период={} дн., типы работы={}, регионы={}, автообновление={}, интервал автообновления={} мин., рассылка в Telegram={}, тема='{}'",
                 telegramId,
                 saved.getSearchQuery(),
                 saved.getExcludeKeywords(),
+                saved.getExcludeCompanies(),
                 saved.getDays(),
                 saved.getWorkTypes(),
                 saved.getCountries(),
@@ -154,6 +164,37 @@ public class UserSettingsService {
         int jitterMax = Math.max(1, (int) Math.round(interval * 0.2));
         int jitter = ThreadLocalRandom.current().nextInt(jitterMax + 1);
         settings.setNextRunAt(LocalDateTime.now().plusMinutes(interval + jitter));
+    }
+
+    private void removeExcludedCompaniesVacancies(UserSettings settings) {
+        Set<String> excludedCompanies = parseCsvLowercase(settings.getExcludeCompanies());
+        if (excludedCompanies.isEmpty()) {
+            return;
+        }
+        vacancyRepository.findByUserTelegramIdOrderByStatusAscLoadedAtDesc(settings.getTelegramId()).stream()
+                .filter(vacancy -> {
+                    String employer = vacancy.getEmployer();
+                    if (employer == null || employer.isBlank()) {
+                        return false;
+                    }
+                    String normalizedEmployer = employer.trim().toLowerCase(Locale.ROOT);
+                    return excludedCompanies.stream().anyMatch(normalizedEmployer::contains);
+                })
+                .forEach(vacancy -> vacancyRepository.deleteByUserAndId(settings.getTelegramId(), vacancy.getId()));
+    }
+
+    private Set<String> parseCsvLowercase(String rawValue) {
+        Set<String> values = new LinkedHashSet<>();
+        if (rawValue == null || rawValue.isBlank()) {
+            return values;
+        }
+        for (String raw : rawValue.split(",")) {
+            String normalized = raw.trim().toLowerCase(Locale.ROOT);
+            if (!normalized.isEmpty()) {
+                values.add(normalized);
+            }
+        }
+        return values;
     }
 }
 

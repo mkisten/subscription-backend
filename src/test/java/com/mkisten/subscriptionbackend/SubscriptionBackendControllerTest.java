@@ -164,6 +164,34 @@ class SubscriptionBackendControllerTest {
     }
 
     @Test
+    void paymentControllerCreateAiCreditsPayment() {
+        PaymentService paymentService = mock(PaymentService.class);
+        UserService userService = mock(UserService.class);
+        PaymentController controller = new PaymentController(paymentService, userService);
+
+        Authentication auth = mock(Authentication.class);
+        when(auth.getName()).thenReturn("user");
+
+        User user = new User();
+        user.setTelegramId(1L);
+        when(userService.findByUsername("user")).thenReturn(user);
+
+        Payment payment = new Payment(1L, 150.0, 5, ServiceCode.VACANCY);
+        payment.setId(11L);
+        when(paymentService.createAiCreditsPayment(1L, 5, ServiceCode.VACANCY)).thenReturn(payment);
+
+        CreatePaymentRequestDto req = new CreatePaymentRequestDto();
+        req.setPaymentType("AI_RESUME_CREDITS");
+        req.setCreditsAmount(5);
+        req.setService(com.mkisten.subscription.contract.enums.ServiceCodeDto.VACANCY);
+
+        ResponseEntity<PaymentResponseDto> response = controller.createPayment(req, auth);
+        assertNotNull(response.getBody());
+        assertEquals("AI_RESUME_CREDITS", response.getBody().getPaymentType());
+        assertEquals(5, response.getBody().getCreditsAmount());
+    }
+
+    @Test
     void adminPaymentControllerGetPending() {
         PaymentService paymentService = mock(PaymentService.class);
         AdminPaymentController controller = new AdminPaymentController(paymentService);

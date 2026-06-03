@@ -12,6 +12,7 @@ public class SearchRequest {
     private Set<String> countries;
     private String cityId;
     private String excludeKeywords;
+    private String excludeCompanies;
     private Boolean telegramNotify = false;
     private Long telegramId;
 }

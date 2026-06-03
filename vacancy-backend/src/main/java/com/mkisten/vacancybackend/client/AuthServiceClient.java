@@ -94,6 +94,26 @@ public class AuthServiceClient {
         return resp.getBody();
     }
 
+    public AiResumeAccessStatusResponse getAiResumeStatus(String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        HttpEntity<?> entity = new HttpEntity<>(headers);
+        ResponseEntity<AiResumeAccessStatusResponse> resp = restTemplate.exchange(
+                authUrl + "/api/ai-resume/status", HttpMethod.GET, entity, AiResumeAccessStatusResponse.class
+        );
+        return resp.getBody();
+    }
+
+    public AiResumeConsumeResponse consumeAiResume(String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        HttpEntity<?> entity = new HttpEntity<>(headers);
+        ResponseEntity<AiResumeConsumeResponse> resp = restTemplate.exchange(
+                authUrl + "/api/ai-resume/consume", HttpMethod.POST, entity, AiResumeConsumeResponse.class
+        );
+        return resp.getBody();
+    }
+
     public void sendTelegramNotification(String token, String message) {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);

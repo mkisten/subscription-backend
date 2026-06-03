@@ -156,6 +156,20 @@ public class VacancyController {
         }
     }
 
+    @Operation(summary = "Удалить все вакансии пользователя")
+    @DeleteMapping
+    public ResponseEntity<Void> deleteAllVacancies(
+            @RequestHeader("Authorization") String authorization) {
+        try {
+            String token = authorization.replace("Bearer ", "");
+            vacancyService.deleteAllVacancies(token);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            log.error("Error deleting all vacancies: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     @Operation(summary = "Получить количество новых вакансий")
     @GetMapping("/count/new")
     public ResponseEntity<Long> getNewVacanciesCount(

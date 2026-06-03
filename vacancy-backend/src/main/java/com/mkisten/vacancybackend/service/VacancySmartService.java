@@ -23,6 +23,7 @@ public class VacancySmartService {
     private final HabrCareerApiService habrCareerApiService;
     private final GetmatchCareerApiService getmatchCareerApiService;
     private final SuperjobCareerApiService superjobCareerApiService;
+    private final RabotaByApiService rabotaByApiService;
     private final TelegramNotificationService telegramService;
     private final VacancyService vacancyService;
 
@@ -39,6 +40,8 @@ public class VacancySmartService {
             request.setDays(settings.getDays());
         if (request.getExcludeKeywords() == null || request.getExcludeKeywords().isEmpty())
             request.setExcludeKeywords(settings.getExcludeKeywords());
+        if (request.getExcludeCompanies() == null || request.getExcludeCompanies().isEmpty())
+            request.setExcludeCompanies(settings.getExcludeCompanies());
         if (!StringUtils.hasText(request.getCityId()))
             request.setCityId(settings.getCityId());
         if (request.getWorkTypes() == null || request.getWorkTypes().isEmpty())
@@ -61,6 +64,7 @@ public class VacancySmartService {
             perQuery.setCountries(request.getCountries());
             perQuery.setCityId(request.getCityId());
             perQuery.setExcludeKeywords(request.getExcludeKeywords());
+            perQuery.setExcludeCompanies(request.getExcludeCompanies());
             perQuery.setTelegramNotify(request.getTelegramNotify());
 
             List<Vacancy> batch = new ArrayList<>();
@@ -68,6 +72,7 @@ public class VacancySmartService {
             batch.addAll(habrCareerApiService.searchVacancies(perQuery, token));
             batch.addAll(getmatchCareerApiService.searchVacancies(perQuery, token));
             batch.addAll(superjobCareerApiService.searchVacancies(perQuery, token));
+            batch.addAll(rabotaByApiService.searchVacancies(perQuery, token));
             for (Vacancy vacancy : batch) {
                 uniqueVacancies.putIfAbsent(vacancy.getId(), vacancy);
             }
@@ -79,6 +84,10 @@ public class VacancySmartService {
         List<Vacancy> filteredVacancies = filterByExcludeKeywords(
                 byWorkType,
                 request.getExcludeKeywords()
+        );
+        filteredVacancies = filterByExcludeCompanies(
+                filteredVacancies,
+                request.getExcludeCompanies()
         );
 
         // Сохраняем только новые вакансии (проверяется уникальность по (id+userTelegramId))
@@ -190,6 +199,44 @@ public class VacancySmartService {
                 result.add(vacancy);
             }
         }
+        return result;
+    }
+
+    private List<Vacancy> filterByExcludeCompanies(List<Vacancy> vacancies, String excludeCompanies) {
+        if (vacancies == null || vacancies.isEmpty()) {
+            return vacancies;
+        }
+        if (!StringUtils.hasText(excludeCompanies)) {
+            return vacancies;
+        }
+
+        List<String> companies = new ArrayList<>();
+        for (String raw : excludeCompanies.split(",")) {
+            String trimmed = raw.trim();
+            if (!trimmed.isEmpty()) {
+                companies.add(trimmed.toLowerCase(Locale.ROOT));
+            }
+        }
+        if (companies.isEmpty()) {
+            return vacancies;
+        }
+
+        List<Vacancy> result = new ArrayList<>(vacancies.size());
+        for (Vacancy vacancy : vacancies) {
+            String employer = vacancy.getEmployer();
+            String normalized = employer == null ? "" : employer.toLowerCase(Locale.ROOT);
+            boolean excluded = false;
+            for (String company : companies) {
+                if (normalized.contains(company)) {
+                    excluded = true;
+                    break;
+                }
+            }
+            if (!excluded) {
+                result.add(vacancy);
+            }
+        }
+
         return result;
     }
 }

@@ -16,6 +16,10 @@ SMTP_USER=$(clean_value "${SMTP_USER:-}")
 SMTP_PASSWORD=$(clean_value "${SMTP_PASSWORD:-}")
 EMAIL_FROM=$(clean_value "${EMAIL_FROM:-${SMTP_USER}}")
 EMAIL_TO=$(printf '%s' "${EMAIL_TO:-${EMAIL_FROM}}" | tr -d '\r')
+LIBRECHAT_HEALTH_URL=$(clean_value "${LIBRECHAT_HEALTH_URL:-http://127.0.0.1:3080/health}")
+ENABLE_ANTHROPIC_CHECK=$(clean_value "${ENABLE_ANTHROPIC_CHECK:-false}")
+ANTHROPIC_API_URL=$(clean_value "${ANTHROPIC_API_URL:-https://api.anthropic.com/v1/models}")
+ANTHROPIC_API_KEY=$(clean_value "${ANTHROPIC_API_KEY:-}")
 
 send_telegram() {
   local text=$1
@@ -83,6 +87,8 @@ human_service_name() {
   case "$1" in
     disk_usage_warn) echo 'Диск сервера: предупреждение' ;;
     disk_usage_crit) echo 'Диск сервера: критический уровень' ;;
+    librechat_http) echo 'LibreChat: HTTP health' ;;
+    anthropic_api) echo 'Anthropic API' ;;
     *) echo "$1" ;;
   esac
 }
@@ -137,6 +143,27 @@ check_disk_usage_threshold() {
   (( usage < threshold ))
 }
 
+check_http_code() {
+  local url=$1
+  local expected=$2
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url" || true)
+  [[ "$code" == "$expected" ]]
+}
+
+check_anthropic_api() {
+  [[ "${ENABLE_ANTHROPIC_CHECK}" == "true" ]] || return 0
+  [[ -n "${ANTHROPIC_API_KEY:-}" ]] || return 1
+
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+    "$ANTHROPIC_API_URL" \
+    -H "x-api-key: ${ANTHROPIC_API_KEY}" \
+    -H 'anthropic-version: 2023-06-01' || true)
+
+  [[ "$code" == "200" ]]
+}
+
 run_check() {
   local key=$1
   local ok_detail=$2
@@ -154,3 +181,11 @@ run_check 'disk_usage_warn' 'Корневой диск сервера запол
 
 run_check 'disk_usage_crit' 'Корневой диск сервера заполнен меньше чем на 92%.' 'Корневой диск сервера заполнен на 92% или больше.' \
   check_disk_usage_threshold 92
+
+run_check 'librechat_http' 'HTTP health LibreChat отвечает кодом 200.' 'HTTP health LibreChat не отвечает кодом 200.' \
+  check_http_code "$LIBRECHAT_HEALTH_URL" 200
+
+if [[ "${ENABLE_ANTHROPIC_CHECK}" == "true" ]]; then
+  run_check 'anthropic_api' 'Anthropic API отвечает кодом 200 по ключу сервера.' 'Anthropic API не отвечает кодом 200. Возможны неверный ключ, блокировка по egress/IP или ошибка провайдера.' \
+    check_anthropic_api
+fi

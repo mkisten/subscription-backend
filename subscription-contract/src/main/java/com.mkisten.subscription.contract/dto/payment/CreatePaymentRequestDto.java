@@ -12,4 +12,6 @@ public class CreatePaymentRequestDto {
     private SubscriptionPlanDto plan;
     private Integer months;
     private ServiceCodeDto service;
+    private String paymentType;
+    private Integer creditsAmount;
 }

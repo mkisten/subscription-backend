@@ -15,6 +15,7 @@ public class VacancyResponse {
     private String schedule;
     private String salary;
     private String url;
+    private String source;
     private VacancyStatus status;
     private LocalDateTime publishedAt;
     private LocalDateTime loadedAt;
@@ -29,6 +30,7 @@ public class VacancyResponse {
         this.schedule = vacancy.getSchedule();
         this.salary = vacancy.getSalary();
         this.url = vacancy.getUrl();
+        this.source = vacancy.getSource();
         this.status = vacancy.getStatus();
         this.publishedAt = vacancy.getPublishedAt();
         this.loadedAt = vacancy.getLoadedAt();
