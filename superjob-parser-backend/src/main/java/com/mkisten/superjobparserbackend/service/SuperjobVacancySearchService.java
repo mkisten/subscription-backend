@@ -10,6 +10,7 @@ import com.mkisten.superjobparserbackend.repository.SearchPageCacheRepository;
 import com.mkisten.superjobparserbackend.repository.SearchProfileRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -176,14 +177,7 @@ public class SuperjobVacancySearchService {
         URI uri = buildSearchUri(criteria);
         log.info("SuperJob parser request URL: {}", uri);
 
-        Document document = Jsoup.connect(uri.toString())
-                .userAgent(userAgent)
-                .referrer(baseUrl)
-                .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
-                .header("Accept", "text/html,application/xhtml+xml")
-                .timeout(timeoutMs)
-                .followRedirects(true)
-                .get();
+        Document document = fetchDocument(uri);
 
         List<ScrapedVacancy> parsedItems = parseCards(document);
         if (criteria.onlyWithSalary()) {
@@ -210,6 +204,55 @@ public class SuperjobVacancySearchService {
         long found = parseFound(document).orElse((long) persisted.size());
         int pages = persisted.isEmpty() ? 0 : (persisted.size() >= sourcePageSize ? criteria.page() + 2 : criteria.page() + 1);
         return new SearchResult(found, pages, persisted);
+    }
+
+    private Document fetchDocument(URI uri) throws Exception {
+        List<String> candidates = candidateUrls(uri);
+        Exception lastException = null;
+        for (String candidate : candidates) {
+            try {
+                return createConnection(candidate).get();
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("SuperJob fetch failed for {}: {}", candidate, e.getMessage());
+            }
+        }
+        if (lastException != null) {
+            throw lastException;
+        }
+        throw new IllegalStateException("No SuperJob candidate URL available for " + uri);
+    }
+
+    private Connection createConnection(String url) {
+        return Jsoup.connect(url)
+                .userAgent(userAgent)
+                .referrer(baseUrl)
+                .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+                .header("Accept", "text/html,application/xhtml+xml")
+                .timeout(timeoutMs)
+                .followRedirects(true);
+    }
+
+    private List<String> candidateUrls(URI uri) {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        candidates.add(uri.toString());
+
+        String host = uri.getHost();
+        if (host == null) {
+            return new ArrayList<>(candidates);
+        }
+
+        if (host.equalsIgnoreCase("www.superjob.by")) {
+            UriComponentsBuilder fallbackBuilder = UriComponentsBuilder.fromUri(uri)
+                    .scheme("https")
+                    .host("russia.superjob.ru");
+            fallbackBuilder.replaceQueryParam("geo[t][0]");
+            fallbackBuilder.replaceQueryParam("geo%5Bt%5D%5B0%5D");
+            URI fallback = fallbackBuilder.build(true).toUri();
+            candidates.add(fallback.toString());
+        }
+
+        return new ArrayList<>(candidates);
     }
 
     private void registerProfile(SearchCriteria criteria) {
