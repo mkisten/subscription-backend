@@ -75,9 +75,6 @@ public class SuperjobVacancySearchService {
     @Value("${app.superjob.search-url}")
     private String searchUrl;
 
-    @Value("${app.superjob.belarus-search-url}")
-    private String belarusSearchUrl;
-
     @Value("${app.superjob.timeout-ms}")
     private int timeoutMs;
 
@@ -243,12 +240,15 @@ public class SuperjobVacancySearchService {
         }
 
         if (host.equalsIgnoreCase("www.superjob.by")) {
-            UriComponentsBuilder fallbackBuilder = UriComponentsBuilder.fromUri(uri)
-                    .scheme("https")
-                    .host("russia.superjob.ru");
+            UriComponentsBuilder fallbackBuilder = UriComponentsBuilder.fromHttpUrl(searchUrl);
+            String query = uri.getRawQuery();
+            if (query != null && !query.isBlank()) {
+                fallbackBuilder.query(query);
+            }
             fallbackBuilder.replaceQueryParam("geo[t][0]");
             fallbackBuilder.replaceQueryParam("geo%5Bt%5D%5B0%5D");
             URI fallback = fallbackBuilder.build(true).toUri();
+            candidates.clear();
             candidates.add(fallback.toString());
         }
 
@@ -372,7 +372,10 @@ public class SuperjobVacancySearchService {
     }
 
     private URI buildSearchUri(SearchCriteria criteria) {
-        String sourceUrl = "belarus".equals(criteria.country()) ? belarusSearchUrl : searchUrl;
+        String sourceUrl = searchUrl;
+        if ("belarus".equals(criteria.country())) {
+            log.info("SuperJob Belarus search rerouted to default search host to avoid unstable by endpoint");
+        }
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(sourceUrl);
         if (criteria.text() != null) {
             builder.queryParam("keywords", criteria.text());
