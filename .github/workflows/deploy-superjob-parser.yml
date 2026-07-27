@@ -41,6 +41,7 @@ jobs:
 
             echo "🔨 Rebuilding SuperJob parser container..."
             docker compose -f docker-compose.yml -f deploy/server/docker-compose.parsers.override.yml build --no-cache superjob_parser_app
+            docker rm -f superjob_parser_backend >/dev/null 2>&1 || true
             docker compose -f docker-compose.yml -f deploy/server/docker-compose.parsers.override.yml up -d --no-deps --force-recreate superjob_parser_app
 
             echo "🏥 Performing parser health check..."
