@@ -52,6 +52,8 @@ jobs:
               fi
               if [ "$i" -eq 12 ]; then
                 echo "❌ SuperJob parser health check failed."
+                docker ps -a --filter name=superjob_parser_backend
+                docker logs --tail 200 superjob_parser_backend || true
                 exit 1
               fi
               echo "⏳ Health check failed, retrying in 10s... (attempt $i/12)"
