@@ -47,6 +47,7 @@ jobs:
             else
               docker compose $COMPOSE_ARGS up -d superjob_parser_postgres
             fi
+            docker network connect --alias superjob_parser_postgres subscription-backend_app_network superjob_parser_postgres >/dev/null 2>&1 || true
             docker rm -f superjob_parser_backend >/dev/null 2>&1 || true
             docker compose $COMPOSE_ARGS up -d --no-deps --force-recreate superjob_parser_app
 
