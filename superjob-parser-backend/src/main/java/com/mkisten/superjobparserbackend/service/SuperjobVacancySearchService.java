@@ -1,6 +1,7 @@
 package com.mkisten.superjobparserbackend.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mkisten.superjobparserbackend.entity.ScrapedVacancy;
 import com.mkisten.superjobparserbackend.entity.SearchPageCache;
@@ -27,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -50,6 +52,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SuperjobVacancySearchService {
 
+    private static final String DEFAULT_BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            + "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
     private static final Pattern VACANCY_ID_PATTERN = Pattern.compile("-(\\d+)\\.html");
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d[\\d\\s]*)");
     private static final Pattern INTEGER_PATTERN = Pattern.compile("\\d+");
@@ -177,15 +181,26 @@ public class SuperjobVacancySearchService {
         log.info("SuperJob parser request URL: {}", uri);
 
         Document document = Jsoup.connect(uri.toString())
-                .userAgent(userAgent)
+                .userAgent(resolveUserAgent())
                 .referrer(baseUrl)
                 .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
-                .header("Accept", "text/html,application/xhtml+xml")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
+                .header("Upgrade-Insecure-Requests", "1")
                 .timeout(timeoutMs)
                 .followRedirects(true)
+                .maxBodySize(0)
                 .get();
 
-        List<ScrapedVacancy> parsedItems = parseCards(document);
+        SearchPagePayload payload = parseAppState(document, criteria).orElseGet(() -> {
+            List<ScrapedVacancy> cards = parseCards(document);
+            Long found = parseFound(document).orElse((long) cards.size());
+            Integer pages = cards.isEmpty() ? 0 : (cards.size() >= sourcePageSize ? criteria.page() + 2 : criteria.page() + 1);
+            return new SearchPagePayload(cards, found, pages);
+        });
+
+        List<ScrapedVacancy> parsedItems = payload.items();
         if (criteria.onlyWithSalary()) {
             parsedItems = parsedItems.stream().filter(item -> item.getSalaryFrom() != null || item.getSalaryTo() != null).toList();
         }
@@ -207,8 +222,10 @@ public class SuperjobVacancySearchService {
         }
 
         List<ScrapedVacancy> persisted = upsert(parsedItems);
-        long found = parseFound(document).orElse((long) persisted.size());
-        int pages = persisted.isEmpty() ? 0 : (persisted.size() >= sourcePageSize ? criteria.page() + 2 : criteria.page() + 1);
+        long found = payload.found() != null ? payload.found() : persisted.size();
+        int pages = payload.pages() != null
+                ? payload.pages()
+                : (persisted.isEmpty() ? 0 : (persisted.size() >= sourcePageSize ? criteria.page() + 2 : criteria.page() + 1));
         return new SearchResult(found, pages, persisted);
     }
 
@@ -377,6 +394,272 @@ public class SuperjobVacancySearchService {
         }
         vacancies.sort(Comparator.comparing(ScrapedVacancy::getPublishedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         return vacancies;
+    }
+
+    private Optional<SearchPagePayload> parseAppState(Document document, SearchCriteria criteria) {
+        try {
+            JsonNode appState = extractAppState(document);
+            if (appState == null) {
+                return Optional.empty();
+            }
+
+            JsonNode vacancyResponses = appState.path("responses").path("lists").path("vacancy");
+            if (!vacancyResponses.isObject() || vacancyResponses.isEmpty()) {
+                return Optional.empty();
+            }
+
+            JsonNode selectedResponse = selectVacancyResponse(vacancyResponses, criteria);
+            if (selectedResponse == null) {
+                return Optional.empty();
+            }
+
+            Map<String, String> alternateUrls = extractVacancyLinks(document);
+            List<ScrapedVacancy> vacancies = new ArrayList<>();
+            for (JsonNode idNode : selectedResponse.path("result")) {
+                String externalId = normalizeBlank(idNode.asText(null));
+                if (externalId == null) {
+                    continue;
+                }
+                ScrapedVacancy vacancy = parseAppStateVacancy(appState, externalId, alternateUrls.get(externalId));
+                if (vacancy != null) {
+                    vacancies.add(vacancy);
+                }
+            }
+
+            long found = selectedResponse.path("meta").path("total").asLong(vacancies.size());
+            int limit = Math.max(selectedResponse.path("meta").path("limit").asInt(sourcePageSize), 1);
+            int pages = found == 0 ? 0 : (int) Math.ceil((double) found / limit);
+            return Optional.of(new SearchPagePayload(vacancies, found, pages));
+        } catch (Exception e) {
+            log.warn("Failed to parse SuperJob APP_STATE, fallback to cards: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private JsonNode extractAppState(Document document) throws Exception {
+        for (Element script : document.select("script")) {
+            String data = normalizeBlank(script.data());
+            if (data == null || !data.startsWith("window.APP_STATE=")) {
+                continue;
+            }
+            String json = data.substring("window.APP_STATE=".length()).trim();
+            if (json.endsWith(";")) {
+                json = json.substring(0, json.length() - 1);
+            }
+            return objectMapper.readTree(json);
+        }
+        return null;
+    }
+
+    private JsonNode selectVacancyResponse(JsonNode vacancyResponses, SearchCriteria criteria) {
+        JsonNode fallback = null;
+        int expectedOffset = Math.max(criteria.page(), 0) * sourcePageSize;
+        var fields = vacancyResponses.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            JsonNode response = entry.getValue();
+            if (!response.path("result").isArray()) {
+                continue;
+            }
+            if (fallback == null) {
+                fallback = response;
+            }
+            if (response.path("meta").path("offset").asInt(-1) == expectedOffset) {
+                return response;
+            }
+        }
+        return fallback;
+    }
+
+    private ScrapedVacancy parseAppStateVacancy(JsonNode appState, String externalId, String alternateUrl) {
+        JsonNode vacancyNode = appState.path("entities").path("vacancy").path(externalId);
+        if (vacancyNode.isMissingNode()) {
+            return null;
+        }
+
+        JsonNode mainInfo = relatedEntity(appState, vacancyNode, "mainInfo");
+        String title = normalizeBlank(mainInfo.path("attributes").path("profession").asText(null));
+        if (title == null) {
+            return null;
+        }
+
+        LocalDateTime now = LocalDateTime.now(SOURCE_ZONE);
+        JsonNode detailInfo = relatedEntity(appState, vacancyNode, "detailInfo");
+        JsonNode companyInfo = relatedEntity(appState, vacancyNode, "companyInfo");
+        JsonNode company = relatedEntity(appState, vacancyNode, "company");
+        JsonNode town = relatedEntity(appState, vacancyNode, "town");
+        JsonNode searchSnippet = relatedEntity(appState, vacancyNode, "searchSnippet");
+        JsonNode workType = relatedEntity(appState, detailInfo, "workType");
+        JsonNode salary = relatedEntity(appState, mainInfo, "salary");
+        JsonNode currency = relatedEntity(appState, salary, "currency");
+
+        ScrapedVacancy vacancy = new ScrapedVacancy();
+        vacancy.setExternalId(externalId);
+        vacancy.setTitle(limit(title, 512));
+        vacancy.setAlternateUrl(limit(Optional.ofNullable(normalizeBlank(alternateUrl)).orElse(baseUrl), 1024));
+        vacancy.setEmployerName(limit(firstNonBlank(
+                normalizeBlank(companyInfo.path("attributes").path("name").asText(null)),
+                normalizeBlank(company.path("attributes").path("title").asText(null))
+        ), 255));
+        vacancy.setAreaName(limit(normalizeBlank(town.path("attributes").path("name").asText(null)), 255));
+
+        applyAppStateSalary(vacancy, salary, currency);
+
+        String updatedAt = normalizeBlank(mainInfo.path("attributes").path("updatedAt").asText(null));
+        vacancy.setRawPublishedText(limit(updatedAt, 255));
+        vacancy.setPublishedAt(parseOffsetDateTime(updatedAt));
+
+        vacancy.setScheduleName(limit(normalizeBlank(workType.path("attributes").path("defaultLabel").asText(null)), 255));
+        applyAppStateSnippet(vacancy, appState, searchSnippet);
+        applyAppStateWorkFormat(vacancy, appState, vacancyNode, detailInfo);
+        vacancy.setFirstSeenAt(now);
+        vacancy.setLastSeenAt(now);
+        if (vacancy.getPublishedAt() == null) {
+            vacancy.setPublishedAt(now);
+        }
+        return vacancy;
+    }
+
+    private JsonNode relatedEntity(JsonNode appState, JsonNode owner, String relationName) {
+        if (owner == null || owner.isMissingNode()) {
+            return null;
+        }
+        JsonNode data = owner.path("relationships").path(relationName).path("data");
+        String type = normalizeBlank(data.path("type").asText(null));
+        String id = normalizeBlank(data.path("id").asText(null));
+        if (type == null || id == null) {
+            return null;
+        }
+        JsonNode entity = appState.path("entities").path(type).path(id);
+        return entity.isMissingNode() ? null : entity;
+    }
+
+    private void applyAppStateSalary(ScrapedVacancy vacancy, JsonNode salary, JsonNode currency) {
+        if (salary == null || salary.isMissingNode()) {
+            vacancy.setSalaryText("По договорённости");
+            return;
+        }
+
+        int minSalary = salary.path("attributes").path("minSalary").asInt(0);
+        int maxSalary = salary.path("attributes").path("maxSalary").asInt(0);
+        boolean paymentAgreement = salary.path("attributes").path("paymentAgreement").asBoolean(false);
+        String currencyKey = normalizeBlank(currency != null ? currency.path("attributes").path("key").asText(null) : null);
+        String currencySymbol = normalizeBlank(currency != null ? currency.path("attributes").path("symbol").asText(null) : null);
+
+        vacancy.setSalaryFrom(minSalary > 0 ? minSalary : null);
+        vacancy.setSalaryTo(maxSalary > 0 ? maxSalary : null);
+        vacancy.setSalaryCurrency(mapCurrencyKey(currencyKey));
+        vacancy.setSalaryText(limit(formatSalaryText(vacancy.getSalaryFrom(), vacancy.getSalaryTo(), paymentAgreement, currencySymbol), 512));
+    }
+
+    private String formatSalaryText(Integer salaryFrom, Integer salaryTo, boolean paymentAgreement, String currencySymbol) {
+        if (paymentAgreement || (salaryFrom == null && salaryTo == null)) {
+            return "По договорённости";
+        }
+        String suffix = currencySymbol == null ? "" : " " + currencySymbol;
+        if (salaryFrom != null && salaryTo != null) {
+            return salaryFrom + " - " + salaryTo + suffix;
+        }
+        if (salaryFrom != null) {
+            return "от " + salaryFrom + suffix;
+        }
+        return "до " + salaryTo + suffix;
+    }
+
+    private String mapCurrencyKey(String currencyKey) {
+        if (currencyKey == null) {
+            return null;
+        }
+        return switch (currencyKey.toLowerCase(Locale.ROOT)) {
+            case "rub" -> "RUR";
+            case "usd" -> "USD";
+            case "eur" -> "EUR";
+            case "kzt" -> "KZT";
+            case "byn" -> "BYN";
+            default -> currencyKey.toUpperCase(Locale.ROOT);
+        };
+    }
+
+    private void applyAppStateSnippet(ScrapedVacancy vacancy, JsonNode appState, JsonNode searchSnippet) {
+        if (searchSnippet == null || searchSnippet.isMissingNode()) {
+            return;
+        }
+
+        String combined = normalizeBlank(searchSnippet.path("attributes").path("value").asText(null));
+        String requirement = null;
+        String responsibility = null;
+        for (JsonNode sectionRef : searchSnippet.path("relationships").path("searchSnippetSections").path("data")) {
+            JsonNode section = appState.path("entities").path(sectionRef.path("type").asText("")).path(sectionRef.path("id").asText(""));
+            String sectionType = normalizeBlank(section.path("attributes").path("sectionType").asText(null));
+            String text = normalizeBlank(section.path("attributes").path("text").asText(null));
+            if (sectionType == null || text == null) {
+                continue;
+            }
+            switch (sectionType) {
+                case "requirements" -> requirement = text;
+                case "responsibilities" -> responsibility = text;
+                default -> {
+                }
+            }
+        }
+        vacancy.setSnippetRequirement(limit(requirement != null ? requirement : combined, 4000));
+        vacancy.setSnippetResponsibility(limit(responsibility, 4000));
+    }
+
+    private void applyAppStateWorkFormat(ScrapedVacancy vacancy, JsonNode appState, JsonNode vacancyNode, JsonNode detailInfo) {
+        for (JsonNode tagRef : vacancyNode.path("relationships").path("vacancyTags").path("data")) {
+            JsonNode tag = appState.path("entities").path(tagRef.path("type").asText("")).path(tagRef.path("id").asText(""));
+            String key = normalizeBlank(tag.path("attributes").path("key").asText(null));
+            if (key == null) {
+                continue;
+            }
+            switch (key) {
+                case "home_format" -> {
+                    vacancy.setWorkFormatId("REMOTE");
+                    vacancy.setWorkFormatName("Удалённо");
+                    return;
+                }
+                case "hybrid_format" -> {
+                    vacancy.setWorkFormatId("HYBRID");
+                    vacancy.setWorkFormatName("Гибрид");
+                    return;
+                }
+                case "office_format" -> {
+                    vacancy.setWorkFormatId("ON_SITE");
+                    vacancy.setWorkFormatName("Офис");
+                    return;
+                }
+                default -> {
+                }
+            }
+        }
+        if (detailInfo != null && detailInfo.path("attributes").path("isRemoteWork").asBoolean(false)) {
+            vacancy.setWorkFormatId("REMOTE");
+            vacancy.setWorkFormatName("Удалённо");
+            return;
+        }
+        if (vacancy.getAreaName() != null) {
+            vacancy.setWorkFormatId("ON_SITE");
+            vacancy.setWorkFormatName("Офис");
+        }
+    }
+
+    private Map<String, String> extractVacancyLinks(Document document) {
+        Map<String, String> links = new LinkedHashMap<>();
+        for (Element link : document.select("a[href*='/vakansii/'][href$='.html']")) {
+            String href = normalizeBlank(link.absUrl("href"));
+            if (href == null) {
+                href = normalizeBlank(link.attr("href"));
+            }
+            if (href == null) {
+                continue;
+            }
+            String externalId = extractVacancyId(href);
+            if (externalId != null) {
+                links.putIfAbsent(externalId, href);
+            }
+        }
+        return links;
     }
 
     private ScrapedVacancy parseCard(Element card) {
@@ -777,6 +1060,24 @@ public class SuperjobVacancySearchService {
         return value.substring(0, maxLength);
     }
 
+    private LocalDateTime parseOffsetDateTime(String value) {
+        try {
+            return value == null ? null : OffsetDateTime.parse(value).atZoneSameInstant(SOURCE_ZONE).toLocalDateTime();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            String normalized = normalizeBlank(value);
+            if (normalized != null) {
+                return normalized;
+            }
+        }
+        return null;
+    }
+
     private Integer parseNullableInt(String value) {
         String normalized = normalizeBlank(value);
         return normalized == null ? null : parseInt(normalized, 0);
@@ -822,6 +1123,9 @@ public class SuperjobVacancySearchService {
     private record ApiSearchResult(long found, int pages, List<Map<String, Object>> items) {
     }
 
+    private record SearchPagePayload(List<ScrapedVacancy> items, Long found, Integer pages) {
+    }
+
     private record SearchCriteria(
             String text,
             String country,
@@ -843,5 +1147,13 @@ public class SuperjobVacancySearchService {
             return new SearchCriteria(text, country, cityName, town, areas, nextPage, requestedPerPage, onlyWithSalary, period, searchField,
                     professionalRoles, schedules, workFormats, cacheKey, paramsForStorage);
         }
+    }
+
+    private String resolveUserAgent() {
+        String configuredUserAgent = normalizeBlank(userAgent);
+        if (configuredUserAgent == null || configuredUserAgent.contains("SubscriptionVacancyParser")) {
+            return DEFAULT_BROWSER_USER_AGENT;
+        }
+        return configuredUserAgent;
     }
 }
