@@ -42,9 +42,6 @@ jobs:
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
             git config --global --add safe.directory "$APP_DIR"
-            CURRENT_USER="$(id -un)"
-            CURRENT_GROUP="$(id -gn)"
-            sudo chown -R "$CURRENT_USER:$CURRENT_GROUP" "$APP_DIR"
             
             # Use Git instead of file copying
             echo "🔑 Setting up Git authentication..."

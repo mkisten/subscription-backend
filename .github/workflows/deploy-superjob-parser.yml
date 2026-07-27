@@ -1,0 +1,62 @@
+name: Deploy SuperJob Parser
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy parser via SSH
+        uses: appleboy/ssh-action@v0.1.5
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            echo "🚀 Deploying SuperJob parser..."
+            APP_DIR="${{ secrets.DEPLOY_PATH }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="/opt/subscription-backend"
+            fi
+
+            export GIT_PAT="${{ secrets.GIT_PAT }}"
+            if [ -z "$GIT_PAT" ]; then
+              echo "❌ GIT_PAT is empty. Add GIT_PAT secret."
+              exit 1
+            fi
+
+            SRC_DIR="$HOME/subscription-backend-superjob-${{ github.sha }}"
+            rm -rf "$SRC_DIR"
+            git clone --depth 1 https://$GIT_PAT@github.com/mkisten/subscription-backend.git "$SRC_DIR"
+            unset GIT_PAT
+
+            cd "$SRC_DIR"
+            if [ -f "$APP_DIR/.env" ]; then
+              cp "$APP_DIR/.env" .env
+            else
+              touch .env
+            fi
+
+            echo "🔨 Rebuilding SuperJob parser container..."
+            docker compose -f deploy/server/docker-compose.parsers.override.yml build --no-cache superjob_parser_app
+            docker compose -f deploy/server/docker-compose.parsers.override.yml up -d --no-deps --force-recreate superjob_parser_app
+
+            echo "🏥 Performing parser health check..."
+            for i in {1..12}; do
+              if curl -f http://localhost:8087/api/actuator/health; then
+                echo "✅ SuperJob parser health check passed!"
+                break
+              fi
+              if [ "$i" -eq 12 ]; then
+                echo "❌ SuperJob parser health check failed."
+                exit 1
+              fi
+              echo "⏳ Health check failed, retrying in 10s... (attempt $i/12)"
+              sleep 10
+            done
+
+            echo "📊 Checking parser container status:"
+            docker ps --filter name=superjob_parser_backend --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+            rm -rf "$SRC_DIR"
