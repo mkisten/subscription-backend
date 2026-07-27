@@ -38,11 +38,17 @@ jobs:
             else
               touch .env
             fi
+            COMPOSE_ARGS="-p subscription-backend -f docker-compose.yml -f deploy/server/docker-compose.parsers.override.yml"
 
             echo "🔨 Rebuilding SuperJob parser container..."
-            docker compose -f docker-compose.yml -f deploy/server/docker-compose.parsers.override.yml build --no-cache superjob_parser_app
+            docker compose $COMPOSE_ARGS build --no-cache superjob_parser_app
+            if docker ps -a --format '{{.Names}}' | grep -qx 'superjob_parser_postgres'; then
+              docker start superjob_parser_postgres >/dev/null 2>&1 || true
+            else
+              docker compose $COMPOSE_ARGS up -d superjob_parser_postgres
+            fi
             docker rm -f superjob_parser_backend >/dev/null 2>&1 || true
-            docker compose -f docker-compose.yml -f deploy/server/docker-compose.parsers.override.yml up -d --no-deps --force-recreate superjob_parser_app
+            docker compose $COMPOSE_ARGS up -d --no-deps --force-recreate superjob_parser_app
 
             echo "🏥 Performing parser health check..."
             for i in {1..12}; do
