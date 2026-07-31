@@ -3,9 +3,10 @@ package com.mkisten.vacancybackend.service;
 import com.mkisten.vacancybackend.client.AuthServiceClient;
 import com.mkisten.vacancybackend.dto.SubscriptionStatusResponse;
 import com.mkisten.vacancybackend.entity.UserSettings;
+import com.mkisten.vacancybackend.entity.UserSettingsAudit;
 import com.mkisten.vacancybackend.repository.VacancyRepository;
 import com.mkisten.vacancybackend.repository.UserSettingsRepository;
-import lombok.RequiredArgsConstructor;
+import com.mkisten.vacancybackend.repository.UserSettingsAuditRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,13 +19,25 @@ import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class UserSettingsService {
 
     private final UserSettingsRepository settingsRepository;
     private final AuthServiceClient authServiceClient;
     private final TelegramNotificationService telegramService;
     private final VacancyRepository vacancyRepository;
+    private final UserSettingsAuditRepository auditRepository;
+
+    public UserSettingsService(UserSettingsRepository settingsRepository, AuthServiceClient authServiceClient,
+                               TelegramNotificationService telegramService, VacancyRepository vacancyRepository,
+                               UserSettingsAuditRepository auditRepository) {
+        this.settingsRepository = settingsRepository; this.authServiceClient = authServiceClient;
+        this.telegramService = telegramService; this.vacancyRepository = vacancyRepository; this.auditRepository = auditRepository;
+    }
+
+    public UserSettingsService(UserSettingsRepository settingsRepository, AuthServiceClient authServiceClient,
+                               TelegramNotificationService telegramService, VacancyRepository vacancyRepository) {
+        this(settingsRepository, authServiceClient, telegramService, vacancyRepository, null);
+    }
 
     /** Получить текущего пользователя из токена */
     private Long getTelegramIdByToken(String token) {
@@ -71,6 +84,7 @@ public class UserSettingsService {
         Long telegramId = getTelegramIdByToken(token);
         UserSettings existingSettings = settingsRepository.findByTelegramId(telegramId)
                 .orElseGet(() -> createDefaultSettings(telegramId));
+        UserSettings before = copySettings(existingSettings);
         if (newSettings.getSearchQuery() != null) {
             existingSettings.setSearchQuery(newSettings.getSearchQuery());
         }
@@ -107,6 +121,7 @@ public class UserSettingsService {
 
         applyAutoUpdateSchedule(existingSettings);
         UserSettings saved = settingsRepository.save(existingSettings);
+        auditChanges(telegramId, before, saved);
         removeExcludedCompaniesVacancies(saved);
 
         // Отправить уведомление об обновлении
@@ -132,6 +147,50 @@ public class UserSettingsService {
                 saved.getTheme()
         );
         return saved;
+    }
+
+    @Transactional
+    public UserSettings updateTheme(String token, String theme) {
+        if (!"light".equals(theme) && !"dark".equals(theme)) {
+            throw new IllegalArgumentException("Theme must be light or dark");
+        }
+        Long telegramId = getTelegramIdByToken(token);
+        UserSettings settings = settingsRepository.findByTelegramId(telegramId).orElseGet(() -> createDefaultSettings(telegramId));
+        String oldTheme = settings.getTheme();
+        if (!theme.equals(oldTheme)) {
+            settings.setTheme(theme);
+            UserSettings saved = settingsRepository.save(settings);
+            if (auditRepository != null) auditRepository.save(createAudit(telegramId, telegramId, "theme", oldTheme, theme));
+            return saved;
+        }
+        return settings;
+    }
+
+    private UserSettings copySettings(UserSettings source) {
+        UserSettings copy = new UserSettings();
+        copy.setTelegramId(source.getTelegramId()); copy.setTelegramNotify(source.getTelegramNotify());
+        copy.setAutoUpdateEnabled(source.getAutoUpdateEnabled()); copy.setAutoUpdateInterval(source.getAutoUpdateInterval());
+        copy.setTheme(source.getTheme()); copy.setSearchQuery(source.getSearchQuery());
+        return copy;
+    }
+
+    private void auditChanges(Long actorId, UserSettings before, UserSettings after) {
+        auditIfChanged(actorId, after.getTelegramId(), "telegram_notify", before.getTelegramNotify(), after.getTelegramNotify());
+        auditIfChanged(actorId, after.getTelegramId(), "auto_update_enabled", before.getAutoUpdateEnabled(), after.getAutoUpdateEnabled());
+        auditIfChanged(actorId, after.getTelegramId(), "auto_update_interval", before.getAutoUpdateInterval(), after.getAutoUpdateInterval());
+        auditIfChanged(actorId, after.getTelegramId(), "theme", before.getTheme(), after.getTheme());
+        auditIfChanged(actorId, after.getTelegramId(), "search_query", before.getSearchQuery(), after.getSearchQuery());
+    }
+
+    private void auditIfChanged(Long actorId, Long targetId, String field, Object oldValue, Object newValue) {
+        if (auditRepository != null && !java.util.Objects.equals(oldValue, newValue)) {
+            auditRepository.save(createAudit(actorId, targetId, field, oldValue == null ? null : oldValue.toString(), newValue == null ? null : newValue.toString()));
+        }
+    }
+
+    private UserSettingsAudit createAudit(Long actorId, Long targetId, String field, String oldValue, String newValue) {
+        UserSettingsAudit audit = new UserSettingsAudit(); audit.setActorTelegramId(actorId); audit.setTargetTelegramId(targetId);
+        audit.setFieldName(field); audit.setOldValue(oldValue); audit.setNewValue(newValue); return audit;
     }
 
     @Transactional

@@ -106,6 +106,13 @@ public class UserSettingsController {
         }
     }
 
+    @PatchMapping("/theme")
+    public ResponseEntity<UserSettings> updateTheme(@RequestHeader("Authorization") String authorization, @RequestBody Map<String, String> request) {
+        try { return ResponseEntity.ok(settingsService.updateTheme(authorization.replace("Bearer ", ""), request.get("theme"))); }
+        catch (IllegalArgumentException e) { return ResponseEntity.badRequest().build(); }
+        catch (Exception e) { log.error("Error updating theme: {}", e.getMessage(), e); return ResponseEntity.internalServerError().build(); }
+    }
+
     private boolean isAdminRole(String role) {
         return "ADMIN".equals(role) || "MODERATOR".equals(role);
     }
