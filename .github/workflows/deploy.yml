@@ -3,6 +3,7 @@ name: Deploy Telegram Subscription Bot
 on:
   push:
     branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -142,7 +143,8 @@ jobs:
 
             # Deploy containers
             echo "🔨 Building and starting containers..."
-            docker compose down --remove-orphans || true
+            # Do not tear down healthy production services before the new image is built.
+            # This keeps the service available if SSH/build fails.
 
             # Defensive cleanup for stale named containers/networks that may remain from failed runs
             for c in subscription_postgres subscription_backend vacancy_postgres vacancy_backend graylog_mongo graylog_opensearch graylog; do
@@ -153,7 +155,7 @@ jobs:
             done
             docker network rm subscription-backend_app_network >/dev/null 2>&1 || true
 
-            docker compose build --no-cache
+            docker compose build
             docker compose up -d --remove-orphans
             
             # Health check with retry
