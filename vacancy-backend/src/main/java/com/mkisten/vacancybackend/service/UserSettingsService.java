@@ -10,6 +10,7 @@ import com.mkisten.vacancybackend.repository.UserSettingsAuditRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
@@ -27,6 +28,7 @@ public class UserSettingsService {
     private final VacancyRepository vacancyRepository;
     private final UserSettingsAuditRepository auditRepository;
 
+    @Autowired
     public UserSettingsService(UserSettingsRepository settingsRepository, AuthServiceClient authServiceClient,
                                TelegramNotificationService telegramService, VacancyRepository vacancyRepository,
                                UserSettingsAuditRepository auditRepository) {
